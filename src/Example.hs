@@ -16,7 +16,7 @@ bigSphere :: Record Sphere
 bigSphere = origin +++ 1737100 ::: End
 
 otherSphere :: Record Sphere
-otherSphere = ([set|y|] 340 . [set|x|] 1003) origin +++ 540 ::: End
+otherSphere = ([upd|y|] 340 . [upd|x|] 1003) origin +++ 540 ::: End
 
 main :: IO ()
 main = do

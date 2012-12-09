@@ -15,9 +15,10 @@ module Data.Record
     , write
 
     , set
-    , get
+    , upd
     , alt
     , modi
+    , get
 
     , type (++)
     , Record(..)
