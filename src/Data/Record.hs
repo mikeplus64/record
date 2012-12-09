@@ -7,6 +7,7 @@
 {-# LANGUAGE UndecidableInstances, OverlappingInstances, TypeFamilies, RecordWildCards, DataKinds, TypeOperators, FunctionalDependencies, GADTs, KindSignatures, FlexibleInstances, MultiParamTypeClasses, TemplateHaskell, PolyKinds, EmptyDataDecls #-}
 module Data.Record 
     ( n
+    , N
     , key
     , set
     , get
@@ -22,7 +23,7 @@ import GHC.TypeLits
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 
-data N (a :: Symbol)
+data N :: Symbol -> *
 
 -- | Convenience. @ n = undefined @
 n :: N k
@@ -60,13 +61,14 @@ get = QuasiQuoter{..}
     quoteType  = undefined
     quoteDec   = undefined
 
-type (k :: Symbol) ::= a = '(k, a)
-infixl 8 ::=
 
 data Record :: [(Symbol, *)] -> * where 
     End   :: Record '[]
     (:::) :: a -> Record xs -> Record ( '(n, a) ': xs)
 
+type (k :: Symbol) ::= a = '(k, a)
+
+infixl 8 ::=
 infixr 3 :::
 
 -- Instances
