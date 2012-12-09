@@ -88,7 +88,8 @@ instance Get ('(k, a) ': xs) k a where
 instance Get xs k a => Get ('(k1, a1) ': xs) k a where
     access (_ ::: a) f = access a f
 
-
+(!) :: Get r k a => Record r -> N k -> a
+(!) = access
 
 class Write (r :: [(Symbol, *)]) (k :: Symbol) a | r k -> a where
     -- | Update a field of a record.
@@ -100,7 +101,8 @@ instance Write ( '(k, a) ': xs) k a where
 instance Write xs k a => Write ( '(k1,a1) ': xs) k a where
     write f x (a ::: b) = a ::: write f x b
 
-
+(=:) :: Write r k a => N k -> a -> Record r -> Record r
+(=:) = write
 
 class Update (r :: [(Symbol, *)]) (k :: Symbol) a | r k -> a where
     -- | Update a field of a record by a function.
