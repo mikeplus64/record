@@ -18,7 +18,7 @@ module Data.Record
     , (=:)
     , (:+)
     , (::=)
-    , (+++) ) where
+    , (&) ) where
 
 import GHC.TypeLits
 import Language.Haskell.TH.Quote
@@ -108,14 +108,14 @@ instance Write xs k a => Write ( '(k1,a1) ': xs) k a where
 
 class Append xs ys where
     -- | Create a new record by appending two, useful for inheritence / subtyping.
-    (+++) :: Record xs -> Record ys -> Record (xs ++ ys)
-infixr 2 +++
+    (&) :: Record xs -> Record ys -> Record (xs ++ ys)
+infixr 2 &
 
 instance Append '[] ys where
-    _ +++ ys = ys
+    _ & ys = ys
 
 instance Append xs ys => Append (x ': xs) ys where
-    (x ::: xs) +++ ys = x ::: (xs +++ ys)
+    (x ::: xs) & ys = x ::: (xs & ys)
 
 
 -- | Use (:+) as 'cons' for the record fields.

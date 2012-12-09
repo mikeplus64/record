@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeOperators, DataKinds, QuasiQuotes #-}
 import Data.Record
+import Control.Arrow
 
 type Point
   = '[ "x" ::= Double 
@@ -13,10 +14,10 @@ origin :: Record Point
 origin = 0 ::: 0 ::: 0 ::: End
 
 bigSphere :: Record Sphere
-bigSphere = origin +++ 1737100 ::: End
+bigSphere = origin & 1737100 ::: End
 
 otherSphere :: Record Sphere
-otherSphere = (update [key|y|] 340 . update [key|x|] 1003) origin +++ 540 ::: End
+otherSphere = ([key|y|] =: 340 >>> [key|x|] =: 1003) origin & 540 ::: End
 
 main :: IO ()
 main = do
