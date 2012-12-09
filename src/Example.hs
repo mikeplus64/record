@@ -16,7 +16,7 @@ bigSphere :: Record Sphere
 bigSphere = origin +++ 1737100 ::: End
 
 otherSphere :: Record Sphere
-otherSphere = ([upd|y|] 340 . [upd|x|] 1003) origin +++ 540 ::: End
+otherSphere = (update [key|y|] 340 . [key|x|] 1003) origin +++ 540 ::: End
 
 main :: IO ()
 main = do
@@ -24,9 +24,9 @@ main = do
     print bigSphere
     print otherSphere
 
-    putStrLn $ "x of the origin     = " ++ show ([get|x|] origin)
-    putStrLn $ "radius of bigSphere = " ++ show ([get|radius|] bigSphere)
-    putStrLn $ "x of otherSphere    = " ++ show ([get|x|] otherSphere)
+    putStrLn $ "x of the origin     = " ++ show (origin      ! [key|x|])
+    putStrLn $ "radius of bigSphere = " ++ show (bigSphere   ! [key|radius|])
+    putStrLn $ "x of otherSphere    = " ++ show (otherSphere ! [key|x|])
 
     putStrLn "What colour is otherSphere?"
     colour <- getLine
