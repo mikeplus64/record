@@ -12,7 +12,10 @@ module Data.Record
     , type (++)
     , Record(..)
     , update
+    , write
     , access
+    , (!)
+    , (=:)
     , (:+)
     , (::=)
     , (+++) ) where

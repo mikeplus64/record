@@ -16,7 +16,7 @@ bigSphere :: Record Sphere
 bigSphere = origin +++ 1737100 ::: End
 
 otherSphere :: Record Sphere
-otherSphere = (update [key|y|] 340 . [key|x|] 1003) origin +++ 540 ::: End
+otherSphere = (update [key|y|] 340 . update [key|x|] 1003) origin +++ 540 ::: End
 
 main :: IO ()
 main = do
@@ -34,6 +34,6 @@ main = do
     walks  <- readLn
 
     let new = colour ::: walks ::: otherSphere :: Record ("colour" ::= String :+ "walks" ::= Bool :+ Sphere)
-    putStrLn $ "To be honest, " ++ [get|colour|] new ++ " is a pretty crappy colour."
-    putStrLn $ "Although I agree; I " ++ (if [get|walks|] new then "like" else "dislike") ++ " walks too."
+    putStrLn $ "To be honest, " ++ new ! [key|colour|] ++ " is a pretty crappy colour."
+    putStrLn $ "Although I agree; I " ++ (if new ! [key|walks|] then "like" else "dislike") ++ " walks too."
 
