@@ -14,7 +14,7 @@ module Data.Record
     , type (++)
     , Record(..)
     , ($=)
-    , (!)
+    , access
     , (:+)
     , (::=)
     , (+++) ) where
@@ -56,7 +56,7 @@ set = QuasiQuoter{..}
 get :: QuasiQuoter
 get = QuasiQuoter{..} 
   where
-    quoteExp s = [|flip (!) (undefined :: N $(clean s))|]
+    quoteExp s = [|flip access (undefined :: N $(clean s))|]
     quotePat   = undefined
     quoteType  = undefined
     quoteDec   = undefined
@@ -100,20 +100,19 @@ instance (Ord a, Ord (Record xs)) => Ord (Record ('(k, a) ': xs)) where
 
 class Get (r :: [(Symbol, *)]) (k :: Symbol) a | r k -> a where
     -- | Get a field of a record.
-    (!) :: Record r -> N k -> a
+    access :: Record r -> N k -> a
 
 -- Success on the first element of a single element record
 instance Get '[ '(k, a) ] k a where
-    (a ::: _) ! _ = a
+    access (a ::: _) _ = a
 
 -- Success on the first element of a record with 1 or more elements
 instance Get ('(k, a) ': xs) k a where
-    (a ::: _) ! _ = a
+    access (a ::: _) _ = a
 
 -- Fail the first element, try the rest
 instance Get xs k a => Get ('(k1, a1) ': xs) k a where
-    (_ ::: a) ! f = a ! f
-
+    access (_ ::: a) f = access a f
 
 
 
@@ -129,8 +128,15 @@ instance Update ( '(k, a) ': xs) k a where
 instance Update xs k a => Update ( '(k1,a1) ': xs) k a where
     (f $= x) (a ::: b) = a ::: (f $= x) b
 
+-- Modify a record's field. Changing its type is perfectly O.K.
+class Modify (r0 :: [(Symbol, *)]) (k :: Symbol) a b (r1 :: [(Symbol, *)]) | r0 k a b -> r1 where
+    modify :: N k -> (a -> b) -> Record r0 -> Record r1
 
+instance Modify ( '(k, a) ': xs) k a b ( '(k, b) ': xs) where
+    modify _ f (a ::: xs) = f a ::: xs
 
+instance Modify xs k a b ys => Modify ( '(k1, a1) ': xs) k a b ( '(k1, a1) ': ys ) where
+    modify l f (a ::: xs) = a ::: modify l f xs
 
 class Append xs ys where
     -- | Create a new record by appending two, useful for inheritence / subtyping.
