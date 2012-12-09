@@ -79,43 +79,29 @@ class Get (r :: [(Symbol, *)]) (k :: Symbol) a | r k -> a where
     -- | Get a field of a record.
     access :: Record r -> N k -> a
 
-instance Get '[ '(k, a) ] k a where
-    access (a ::: _) _ = a
-
 instance Get ('(k, a) ': xs) k a where
     access (a ::: _) _ = a
 
 instance Get xs k a => Get ('(k1, a1) ': xs) k a where
     access (_ ::: a) f = access a f
 
-(!) :: Get r k a => Record r -> N k -> a
-(!) = access
-
 class Write (r :: [(Symbol, *)]) (k :: Symbol) a | r k -> a where
-    -- | Update a field of a record.
     write :: N k -> a -> Record r -> Record r
+    update :: N k -> (a -> a) -> Record r -> Record r
 
 instance Write ( '(k, a) ': xs) k a where
     write _ x (_ ::: b) = x ::: b
+    update _ f (x ::: b) = f x ::: b
 
 instance Write xs k a => Write ( '(k1,a1) ': xs) k a where
     write f x (a ::: b) = a ::: write f x b
+    update l f (a ::: b) = a ::: update l f b
+
+(!) :: Get r k a => Record r -> N k -> a
+(!) = access
 
 (=:) :: Write r k a => N k -> a -> Record r -> Record r
 (=:) = write
-
-class Update (r :: [(Symbol, *)]) (k :: Symbol) a | r k -> a where
-    -- | Update a field of a record by a function.
-    update :: N k -> (a -> a) -> Record r -> Record r
-
-instance Update ( '(k, a) ': xs) k a where
-    update _ f (x ::: b) = f x ::: b
-
-instance Update xs k a => Update ( '(k1,a1) ': xs) k a where
-    update l f (a ::: b) = a ::: update l f b
-
-
-
 
 class Append xs ys where
     -- | Create a new record by appending two, useful for inheritence / subtyping.
