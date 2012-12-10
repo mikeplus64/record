@@ -34,7 +34,7 @@ main = do
     putStrLn "Does it enjoy walks in the park?"
     walks  <- readLn
 
-    let new = colour ::: walks ::: otherSphere :: Record ("colour" ::= String :+ "walks" ::= Bool :+ Sphere)
+    let new = colour ::: walks ::: otherSphere :: Record ("colour" ::= String & "walks" ::= Bool & Sphere)
     putStrLn $ "To be honest, " ++ new ! [key|colour|] ++ " is a pretty crappy colour."
     putStrLn $ "Although I agree; I " ++ (if new ! [key|walks|] then "like" else "dislike") ++ " walks too."
 
