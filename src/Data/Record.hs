@@ -1,4 +1,26 @@
-module Data.Record (key, set, alt, get, Record, P, (&), end, unbox, box, transform, run, runtrans, access, write, alter) where
+module Data.Record ( key
+                   , set
+                   , alt
+                   , get
+                   , Record
+                   , P
+                   , (&)
+                   , end
+                   , unbox
+                   , box
+                   , transform
+                   , run
+                   , runtrans
+                   , access
+                   , write
+                   , alter
+                   , (:=)
+                   , (++)
+                   , append
+                   , NotElem
+                   , AllNotElem
+                   , Keys ) where
+
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
