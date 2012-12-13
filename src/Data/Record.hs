@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs, TypeFamilies, UndecidableInstances, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, ConstraintKinds, DataKinds, TypeOperators, PolyKinds, EmptyDataDecls, Rank2Types, ExistentialQuantification, FunctionalDependencies, KindSignatures, OverlappingInstances, TemplateHaskell #-}
-module Data.Record where
+module Data.Record (key, set, alt, get, Record, P, (&), end, unbox, box, transform, run, runtrans, access, write, alter) where
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
