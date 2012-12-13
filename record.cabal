@@ -13,4 +13,4 @@ cabal-version:       >=1.8
 library
   hs-source-dirs:      src
   exposed-modules:     Data.Record
-  build-depends:       base >= 4.6, template-haskell ==2.8.*
+  build-depends:       base >= 4.6, template-haskell ==2.8.*, mtl
