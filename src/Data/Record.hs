@@ -189,7 +189,7 @@ class AllNotElem (xs :: [a]) (ys :: [a])
 instance AllNotElem '[] '[]
 instance AllNotElem '[] ys
 instance AllNotElem xs '[]
-instance (NotElem y xs, AllNotElem ys xs) => AllNotElem (y ': ys) (x ': xs)
+instance (NotElem y xs, AllNotElem ys xs) => AllNotElem (y ': ys) xs
 
 type family Keys (xs :: [F k a]) :: [k]
 type instance Keys '[] = '[]
