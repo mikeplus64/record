@@ -2,8 +2,6 @@ module Data.Record ( key
                    , set
                    , alt
                    , get
-                   , Record
-                   , P
                    , (&)
                    , end
                    , unbox
@@ -14,11 +12,13 @@ module Data.Record ( key
                    , access
                    , write
                    , alter
-                   , (:=)
-                   , (++)
                    , append
+                   , Record
+                   , P
+                   , (:=)
                    , NotElem
                    , AllNotElem
+                   , type (++)
                    , Keys ) where
 
 import Language.Haskell.TH.Syntax

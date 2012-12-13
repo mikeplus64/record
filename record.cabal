@@ -1,5 +1,5 @@
 name:                record
-version:             0.1.0.26
+version:             0.1.0.27
 synopsis:            Efficient, type safe records implemented using GADTs and type level strings.
 homepage:            http://quasimal.com/projects/records
 license:             BSD3
@@ -28,4 +28,6 @@ library
                        KindSignatures,
                        OverlappingInstances,
                        UndecidableInstances,
-                       TemplateHaskell
+                       TemplateHaskell,
+                       ExplicitNamespaces
+
