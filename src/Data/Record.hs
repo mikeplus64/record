@@ -1,10 +1,6 @@
 {-# LANGUAGE GADTs, TypeFamilies, UndecidableInstances, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, ConstraintKinds, DataKinds, TypeOperators, PolyKinds, EmptyDataDecls, Rank2Types, ExistentialQuantification, FunctionalDependencies, KindSignatures, OverlappingInstances #-}
+module Data.Record where
 import GHC.TypeLits
-import Control.Monad.Identity
-import Data.IORef
-import Data.STRef
-import Data.List (intercalate)
-import Data.Typeable
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
 -- you can't do field access from a string and a Typeable context, although
@@ -60,7 +56,7 @@ instance BuildRecord (w :: * -> *) where
     end = Et
 
 class Unbox r where 
-    -- | Unbox every element of a record.
+    -- | "Unbox" every element of a record.
     -- Great for cases where every element is wrapped by a newtype.
     unbox :: (forall a. w a -> a) -> Record (w :: * -> *) r -> Record P r 
 instance Unbox '[] where 
@@ -69,6 +65,15 @@ instance Unbox '[] where
 instance Unbox xs => Unbox (x ': xs) where
     {-# INLINE unbox #-}
     unbox f (Ct x xs) = f x & unbox f xs
+
+class Box r where
+    -- | "Box" every element of a record.
+    -- Usually means applying a newtype wrapper to everything
+    box :: (forall a. a -> w a) -> Record P r -> Record (w :: * -> *) r
+instance Box '[] where
+    box _ _ = end
+instance Box xs => Box (x ': xs) where
+    box f (Cp x xs) = Ct (f x) (box f xs)
 
 class Transform r where
     -- | Change the type wrapping every element of a record
@@ -93,7 +98,7 @@ instance Run xs => Run (x ': xs) where
 
 class Runtrans r where
     -- | A more efficient implementation of @ run . transform f @.
-    -- Rewrite rules will transform @ run . transform f @ into a call
+    -- Rewrite rules should transform @ run . transform f @ into a call
     -- to @ runtrans f @
     runtrans :: Monad o => (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> Record i r -> o (Record P r)
 instance Runtrans '[] where
