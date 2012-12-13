@@ -1,154 +1,139 @@
--- | Type safe labelled records implemented using GADTs, type literals, and other fun stuff.
--- Functions that use TH are for convenience only -- they are only there to save you from typing a few extra characters
---
--- Extensions you need to use this module are: TypeOperators, DataKinds
+{-# LANGUAGE GADTs, TypeFamilies, UndecidableInstances, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, ConstraintKinds, DataKinds, TypeOperators, PolyKinds, EmptyDataDecls, Rank2Types, ExistentialQuantification, FunctionalDependencies, KindSignatures, OverlappingInstances #-}
+import GHC.TypeLits
+import Control.Monad.Identity
+import Data.IORef
+import Data.STRef
+import Data.List (intercalate)
+import Data.Typeable
 
-{-# LANGUAGE Rank2Types, UndecidableInstances, OverlappingInstances, TypeFamilies, RecordWildCards, DataKinds, TypeOperators, FunctionalDependencies, GADTs, KindSignatures, FlexibleInstances, MultiParamTypeClasses, TemplateHaskell, PolyKinds, EmptyDataDecls #-}
-module Data.Record where
-{-
-module Data.Record 
-    ( n
-    , N
-    , key
-    , type (++)
-    , Record(..)
-    , update
-    , write
-    , access
-    , (!)
-    , (=:)
-    , (::=)
-    , type (&) ) where
--}
+-- | A key of a record. This does not exist at runtime, and as a tradeoff,
+-- you can't do field access from a string and a Typeable context, although
+-- it would certainly be very nice.
+data Key k
+key :: Key k
+key = undefined
+-- | A field
+data F a b = F a b
 
-import GHC.TypeLits hiding (type (*))
-import Language.Haskell.TH.Syntax
-import Language.Haskell.TH.Quote
-import Language.Haskell.TH.Lib
+type (:=) = 'F
 
-default(Integer)
+infixr 4 &
 
-data N :: Symbol -> *
+data P
+data family Record (t :: a) (r :: [F Symbol *])
 
--- | Convenience. @ n = undefined @
-n :: N k
-n = undefined
+-- | "Pure" records
+data instance Record (w :: *) r where 
+    Cp :: e -> Record P r -> Record P (k := e ': r)
+    Ep :: Record P '[]
 
-get, set, alt, key :: QuasiQuoter
-get = QuasiQuoter { quoteExp = \s -> [| flip access (n :: N $(clean s)) |] }
-set = QuasiQuoter { quoteExp = \s -> [| write  (n :: N $(clean s)) |] }
-alt = QuasiQuoter { quoteExp = \s -> [| update (n :: N $(clean s)) |] }
-key = QuasiQuoter { quoteExp = \s -> [| n :: N $(clean s) |] }
+-- | Record transformer
+data instance Record (w :: * -> *) r where 
+    Ct :: w e -> Record w r -> Record w (k := e ': r)
+    Et :: Record (w :: * -> *) '[]
 
-clean :: String -> TypeQ
-clean = litT . strTyLit . unwords . words
+instance Show (Record P '[]) where
+    show _ = "end"
+instance (Show a, Show (Record P xs)) => Show (Record P (k := a ': xs)) where
+    show (Cp x xs) = show x ++ " & " ++ show xs
 
-data Record :: [(Symbol, *)] -> * where 
-    End   :: Record '[]
-    (:::) :: a -> Record xs -> Record ( '(n, a) ': xs)
+instance Show (Record w '[]) where
+    show _ = "end"
+instance (Show (w a), Show (Record w xs)) => Show (Record w (k := a ': xs)) where
+    show (Ct x xs) = show x ++ " & " ++ show xs
 
-type (k :: Symbol) ::= a = '(k, a)
+class BuildRecord w where
+    type Val w e
+    (&) :: Val w e -> Record w r -> Record w (k := e ': r)
+    end :: Record w '[]
+instance BuildRecord P where
+    type Val P e = e
+    {-# INLINE (&) #-}
+    {-# INLINE end #-}
+    (&) = Cp
+    end = Ep
+instance BuildRecord (w :: * -> *) where
+    type Val w e = w e
+    {-# INLINE (&) #-}
+    {-# INLINE end #-}
+    (&) = Ct
+    end = Et
 
-infixl 8 ::=
-infixr 3 :::
+class Unbox r where 
+    -- | Unbox every element of a record.
+    -- Great for cases where every element is wrapped by a newtype.
+    unbox :: (forall a. w a -> a) -> Record (w :: * -> *) r -> Record P r 
+instance Unbox '[] where 
+    {-# INLINE unbox #-}
+    unbox _ _ = end
+instance Unbox xs => Unbox (x ': xs) where
+    {-# INLINE unbox #-}
+    unbox f (Ct x xs) = f x & unbox f xs
 
--- Instances
--- if only these could be derived automatically ...
---
--- TODO: Typeable and Data
--- frankly I have no idea how to approach either, since Record's paramater isn't *
+class Transform r where
+    -- | Change the type wrapping every element of a record
+    transform :: (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> Record i r -> Record o r
+instance Transform '[] where
+    transform _ _ = end
+instance Transform xs => Transform (x ': xs) where
+    transform f (Ct x xs) = f x & transform f xs
 
-instance Show (Record '[]) where
-    show _ = "End"
+class Run r where
+    -- | Iterate over a Record's elements, and use a monad to unbox them
+    -- Especially handy in situations like transforming a @Record IORef a@ to 
+    -- @IO (Record P a)@, where you can simply use run . transform readIORef
+    run :: Monad m => Record m r -> m (Record P r)
+instance Run '[] where
+    run _ = return end
+instance Run xs => Run (x ': xs) where
+    run (Ct x xs) = do
+        y  <- x
+        ys <- run xs
+        return (y & ys)
 
-instance (Show a, Show (Record xs)) => Show (Record (k ::= a ': xs)) where
-    show (x ::: xs) = show x ++ " ::: " ++ show xs
+class Runtrans r where
+    -- | A more efficient implementation of @ run . transform f @.
+    -- Rewrite rules will transform @ run . transform f @ into a call
+    -- to @ runtrans f @
+    runtrans :: Monad o => (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> Record i r -> o (Record P r)
+instance Runtrans '[] where
+    runtrans _ _ = return end
+instance Runtrans xs => Runtrans (x ': xs) where
+    runtrans f (Ct x xs) = do
+        y  <- f x
+        ys <- runtrans f xs
+        return (y & ys)
+{-# RULES "Record/runtrans" forall (f :: forall a. i a -> o a) (r :: Runtrans r => Record i r). run (transform f r)   = runtrans f r #-}
 
-instance Eq (Record '[]) where
-    _ == _ = True
+class Access w r k a | w r k -> a where
+    -- | Get a field of a record given its label.
+    access :: Key k -> Record w r -> a
+instance Access P (k := a ': xs) k a where
+    {-# INLINE access #-}
+    access _  (Cp x _) = x
+instance Access P xs k a => Access P (k0 := a0 ': xs) k a where
+    {-# INLINE access #-}
+    access k (Cp _ xs) = access k xs
+instance Access (w :: * -> *) (k := a ': xs) k (w a) where
+    {-# INLINE access #-}
+    access _  (Ct x _) = x
+instance Access (w :: * -> *) xs k (w a) => Access (w :: * -> *) (k0 := a0 ': xs) k (w a) where
+    {-# INLINE access #-}
+    access k (Ct _ xs) = access k xs
 
-instance (Eq a, Eq (Record xs)) => Eq (Record (k ::= a ': xs)) where
-    (x ::: xs) == (y ::: ys) = x == y && xs == ys
+class Update w r k a | r k -> a where
+    -- | Write to a record's field
+    write :: Key k -> a        -> Record w r -> Record w r
+    -- | Update a record's field
+    alter :: Key k -> (a -> a) -> Record w r -> Record w r
+instance Update P (k := a ': xs) k a where
+    {-# INLINE write #-}
+    {-# INLINE alter #-}
+    write _ x (Cp _ xs) = x   & xs
+    alter _ f (Cp y ys) = f y & ys
+instance Update P xs k a => Update P (k0 := a0 ': xs) k a where
+    {-# INLINE write #-}
+    {-# INLINE alter #-}
+    write n y (Cp x xs) = x & write n y xs
+    alter n f (Cp x xs) = x & alter n f xs
 
-instance Ord (Record '[]) where
-    compare _ _ = EQ
-
-instance (Ord a, Ord (Record xs)) => Ord (Record (k ::= a ': xs)) where
-    compare (x ::: xs) (y ::: ys) = compare (compare x y) (compare xs ys)
-
-class Get (r :: [(Symbol, *)]) (k :: Symbol) a | r k -> a where
-    -- | Get a field of a record.
-    access :: Record r -> N k -> a
-
-instance Get (k ::= a ': xs) k a where
-    access (a ::: _) _ = a
-
-instance Get xs k a => Get (k1 ::= a1 ': xs) k a where
-    access (_ ::: a) f = access a f
-
-class Write (r :: [(Symbol, *)]) (k :: Symbol) a | r k -> a where
-    write :: N k -> a -> Record r -> Record r
-    update :: N k -> (a -> a) -> Record r -> Record r
-
-instance Write (k ::= a ': xs) k a where
-    write _ x (_ ::: b) = x ::: b
-    update _ f (x ::: b) = f x ::: b
-
-instance Write xs k a => Write (k1 ::= a1 ': xs) k a where
-    write f x (a ::: b) = a ::: write f x b
-    update l f (a ::: b) = a ::: update l f b
-
-(!) :: Get r k a => Record r -> N k -> a
-(!) = access
-
-(=:) :: Write r k a => N k -> a -> Record r -> Record r
-(=:) = write
-
-<<<<<<< HEAD
--- | Append type lists
-type family (++) (x :: [a]) (y :: [a]) :: [a]
-type instance '[]       ++ xs = xs
-type instance (x ': xs) ++ ys = x ': (xs ++ ys)
-
--- | Get a record's size at compile time
--- 
-size :: Name -> Q Exp
-size z = reify z >>= getType >>= fmap lift go
-  where 
-        realType (AppT (ConT _) (ConT qt)) = do
-            r <- reify qt
-            case r of
-                TyConI (TySynD _ _ t) -> return t
-                _                     -> error (show r)
-
-        realType t = error (show t)
-
-        getType (VarI _ t _ _) = realType t
-        getType x              = error (show x)
-
-        go :: Type -> Int
-        go PromotedNilT           = 0
-        go (AppT PromotedConsT i) = 1 + go i
-        go (AppT q             i) = go q + go i
-        go _                      = 0
-
-=======
-class Append xs ys where
-    -- | Create a new record by appending two, useful for inheritence / subtyping.
-    (&) :: Record xs -> Record ys -> Record (xs ++ ys)
-infixr 2 &
-
-instance Append '[] ys where
-    _ & ys = ys
-
-instance Append xs ys => Append (x ': xs) ys where
-    (x ::: xs) & ys = x ::: (xs & ys)
-
--- | Use (:+) as 'cons' for the record fields.
-type x :+ xs = x ': xs
-infixr 4 :+
-
-type family (++) (x :: [a]) (y :: [a]) :: [a]
-type instance '[]       ++ xs = xs
-type instance (x ': xs) ++ ys = x ': (xs ++ ys)
->>>>>>> 55ab3b751cb4cb5e78dd3fdf8016f7ac28910c9c
