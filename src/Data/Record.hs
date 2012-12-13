@@ -186,7 +186,6 @@ instance NotElem y '[ x ]
 instance NotElem y xs => NotElem y (x ': xs)
 
 class AllNotElem (xs :: [a]) (ys :: [a])
-instance AllNotElem '[] '[]
 instance AllNotElem '[] ys
 instance AllNotElem xs '[]
 instance (NotElem y xs, AllNotElem ys xs) => AllNotElem (y ': ys) xs
