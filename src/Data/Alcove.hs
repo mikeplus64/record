@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, TypeFamilies, UndecidableInstances, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, ConstraintKinds, DataKinds, TypeOperators, PolyKinds, EmptyDataDecls, Rank2Types, ExistentialQuantification, FunctionalDependencies #-}
+{-# LANGUAGE GADTs, TypeFamilies, UndecidableInstances, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, ConstraintKinds, DataKinds, TypeOperators, PolyKinds, EmptyDataDecls, Rank2Types, ExistentialQuantification, FunctionalDependencies, KindSignatures #-}
 import GHC.TypeLits
 import Control.Monad.Identity
 import Data.IORef
@@ -16,99 +16,84 @@ data F a b = F a b
 
 type (:=) = 'F
 
------------------------------------------------------------------------------
--- RecordT classes and types
+infixr 4 &
 
-data RecordT ::  (* -> *)      -- ^ type constructor to wrap values
-             -> [ F Symbol * ] -- ^ type-level key/value list
-             -> * where
+data P
+data family Record (t :: a) (r :: [F Symbol *])
 
-    Et :: RecordT m '[]
-    Ct :: m a -> RecordT m xs -> RecordT m (k := a ': xs)
-infixr 4 `Ct`
+-- | "Pure" records
+data instance Record (w :: *) r where 
+    Cp :: e -> Record P r -> Record P (k := e ': r)
+    Ep :: Record P '[]
 
-type family Field (k :: Symbol) (u :: * -> *) (r :: [ F Symbol * ]) :: [ F Symbol * ]
-type instance Field k u '[] = '[]
-type instance Field k u (k := a ': xs) = k := u a ': Field k u xs
+-- | Record transformer
+data instance Record (w :: * -> *) r where 
+    Ct :: w e -> Record w r -> Record w (k := e ': r)
+    Et :: Record (w :: * -> *) '[]
+
+class BuildRecord w where
+    type Val w e
+    (&) :: Val w e -> Record w r -> Record w (k := e ': r)
+    end :: Record w '[]
+
+instance BuildRecord P where
+    type Val P e = e
+    {-# INLINE (&) #-}
+    {-# INLINE end #-}
+    (&) = Cp
+    end = Ep
+
+instance BuildRecord (w :: * -> *) where
+    type Val w e = w e
+    {-# INLINE (&) #-}
+    {-# INLINE end #-}
+    (&) = Ct
+    end = Et
+
+class Unbox r where 
+    unbox :: (forall a. w a -> a) -> Record (w :: * -> *) r -> Record P r 
+instance Unbox '[] where 
+    unbox _ _ = end
+instance Unbox xs => Unbox (x ': xs) where
+    unbox f (Ct x xs) = f x & unbox f xs
 
 class Transform r where
-    transform :: (forall a. i a -> o a) -> RecordT i r -> RecordT o r
-
+    transform :: (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> Record i r -> Record o r
 instance Transform '[] where
-    {-# INLINE transform #-}
-    transform _ _ = Et
+    transform _ _ = end
+instance Transform xs => Transform (x ': xs) where
+    transform f (Ct x xs) = f x & transform f xs
 
-instance Transform xs => Transform (x ': xs) where 
-    {-# INLINE transform #-}
-    transform f (Ct x xs) = Ct (f x) (transform f xs)
-
-class TransformTypeable r where
-    transformTyp :: (forall a. Typeable a => i a -> o a) -> RecordT i r -> RecordT o r
-
-instance TransformTypeable '[] where
-    transformTyp _ _ = Et
-
-instance (Typeable a, TransformTypeable xs) => TransformTypeable (k := a ': xs) where
-    transformTyp f (Ct x xs) = Ct (f x) (transformTyp f xs)
-
-
-instance Show (RecordT m '[]) where
-    show _ = "End"
-
-instance (Show (m a), Show (RecordT m xs)) => Show (RecordT m (k := a ': xs)) where
-    show (Ct x xs) = show x ++ " ::: " ++ show xs
-
-
-class Run m r where
-    run :: RecordT m r -> m (Record r)
-
-instance Monad m => Run m '[] where 
-    {-# INLINE run #-}
-    run _ = return E
-
-instance (Monad m, Run m xs) => Run m (x ': xs) where
-    {-# INLINE run #-}
+-- | Iterate over a Record's elements, and use a monad to unbox them
+-- Especially handy in situations like transforming a @Record IORef a@ to 
+-- @IO (Record P a)@, where you can simply use run . transform readIORef
+class Run r where
+    run :: Monad m => Record m r -> m (Record P r)
+instance Run '[] where
+    run _ = return end
+instance Run xs => Run (x ': xs) where
     run (Ct x xs) = do
         y  <- x
         ys <- run xs
-        return (C y ys)
+        return (y & ys)
 
+-- | A more efficient implementation of @ run . transform f @.
+-- Not exported because it is much hairier to use than that, but
+-- rewrite rules will transform @ run . transform f @ into a call
+-- to @ runtrans f @
+class Runtrans r where
+    runtrans :: Monad o => (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> Record i r -> o (Record P r)
+instance Runtrans '[] where
+    runtrans _ _ = return end
+instance Runtrans xs => Runtrans (x ': xs) where
+    runtrans f (Ct x xs) = do
+        y  <- f x
+        ys <- runtrans f xs
+        return (y & ys)
 
-class AccessT k r a | k r -> a where
-    accessT :: RecordT m r -> N k -> m a
-
-instance AccessT k (k := a ': xs) a where
-    {-# INLINE accessT #-}
-    accessT (Ct x _) _ = x
-
-instance AccessT k xs a => AccessT k (ka0 ': xs) a where
-    {-# INLINE accessT #-}
-    accessT (Ct _ x) n = accessT x n
-
-type IORec = RecordT IORef
-type Ball  = '[ "x" := Int, "y" := Int, "z" := Int, "dx" := Int ]
-
-
-ib :: IO (IORec Ball)
-ib = do
-    x  <- newIORef 0
-    y  <- newIORef 0
-    z  <- newIORef 0
-    dx <- newIORef 0
-    return (x `Ct` y `Ct` z `Ct` dx `Ct` Et)
-
------------------------------------------------------------------------------
--- Record classes and types
-
-data Record :: [ F Symbol * ] -> * where
-    E :: Record '[]
-    C :: a -> Record xs -> Record (k := a ': xs)
-
-instance Show (Record '[]) where
-    show _ = "End"
-instance (Show a, Show (Record xs)) => Show (Record (k := a ': xs)) where
-    show (C x xs) = show x ++ " ::: " ++ show xs
-
-
+{-# RULES 
+    "Record/runtrans" 
+    forall (f :: forall a. i a -> o a) (r :: Runtrans r => Record i r). run (transform f r) = runtrans f r           
+  #-}
 
 
