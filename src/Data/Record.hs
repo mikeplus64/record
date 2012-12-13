@@ -13,12 +13,18 @@ data Key k
 key :: String -> Q Exp
 key s = [| undefined :: Key $(litT . return . StrTyLit $ s) |] 
 
+-- | See 'write'
+-- [set|x|] == write (undefined :: Key x)
 set :: QuasiQuoter
 set = QuasiQuoter { quoteExp = \s -> [| write $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
+-- | See 'alter'
+-- > [alt|x|] == alter (undefined :: Key x)
 alt :: QuasiQuoter
 alt = QuasiQuoter { quoteExp = \s -> [| alter  $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
+-- | See 'access'.
+-- > [get|x|] == access (undefined :: Key x)
 get :: QuasiQuoter
 get = QuasiQuoter { quoteExp = \s -> [| access $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
