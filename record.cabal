@@ -1,5 +1,5 @@
 name:                record
-version:             0.1.0.24
+version:             0.1.0.25
 synopsis:            Efficient, type safe records implemented using GADTs and type level strings.
 homepage:            http://quasimal.com/projects/records
 license:             BSD3
@@ -13,4 +13,19 @@ cabal-version:       >=1.8
 library
   hs-source-dirs:      src
   exposed-modules:     Data.Record
-  build-depends:       base >= 4.6, template-haskell ==2.8.*, mtl
+  build-depends:       base >= 4.6, template-haskell ==2.8.*
+  extensions:          GADTs,
+                       TypeFamilies,
+                       FlexibleInstances,
+                       FlexibleContexts,
+                       DataKinds,
+                       TypeOperators,
+                       PolyKinds,
+                       EmptyDataDecls,
+                       Rank2Types,
+                       ExistentialQuantification,
+                       FunctionalDependencies,
+                       KindSignatures,
+                       OverlappingInstances,
+                       UndecidableInstances,
+                       TemplateHaskell
