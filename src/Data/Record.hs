@@ -160,3 +160,31 @@ instance Update P xs k a => Update P (k0 := a0 ': xs) k a where
     write n y (Cp x xs) = x & write n y xs
     alter n f (Cp x xs) = x & alter n f xs
 
+class NotElem (x :: a) (xs :: [a])
+instance NotElem y '[ x ]
+instance NotElem y xs => NotElem y (x ': xs)
+
+class AllNotElem (xs :: [a]) (ys :: [a])
+instance AllNotElem '[] ys
+instance AllNotElem xs '[]
+instance (NotElem y xs, AllNotElem ys xs) => AllNotElem (y ': ys) (x ': xs)
+
+type family Keys (xs :: [F k a]) :: [k]
+type instance Keys '[] = '[]
+type instance Keys (k := a ': xs) = k ': Keys xs
+
+-- | Append two type-level lists
+type family (++) (x :: [a]) (y :: [a]) :: [a]
+type instance '[]       ++ ys  = ys
+type instance (x ': xs) ++ ys  = x ': (xs ++ ys)
+
+class Append w r0 r1 where
+    -- | Append two records, making sure first that there are no duplicate fields
+    append :: AllNotElem (Keys r0) (Keys r1) => Record w r0 -> Record w r1 -> Record w (r0 ++ r1)
+instance Append w '[] ys where
+    append _ ys = ys
+instance (AllNotElem (Keys xs) (Keys ys), Append P xs ys) => Append P (x ': xs) ys where
+    append (Cp x xs) ys = Cp x (append xs ys)
+instance (AllNotElem (Keys xs) (Keys ys), Append (w :: * -> *) xs ys) => Append w (x ': xs) ys where
+    append (Ct x xs) ys = Ct x (append xs ys)
+
