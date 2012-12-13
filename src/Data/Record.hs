@@ -2,7 +2,6 @@
 -- Functions that use TH are for convenience only -- they are only there to save you from typing a few extra characters
 --
 -- Extensions you need to use this module are: TypeOperators, DataKinds
---
 
 {-# LANGUAGE Rank2Types, UndecidableInstances, OverlappingInstances, TypeFamilies, RecordWildCards, DataKinds, TypeOperators, FunctionalDependencies, GADTs, KindSignatures, FlexibleInstances, MultiParamTypeClasses, TemplateHaskell, PolyKinds, EmptyDataDecls #-}
 module Data.Record where
@@ -57,7 +56,7 @@ infixr 3 :::
 -- if only these could be derived automatically ...
 --
 -- TODO: Typeable and Data
--- frankly I have no idea how to approach either
+-- frankly I have no idea how to approach either, since Record's paramater isn't *
 
 instance Show (Record '[]) where
     show _ = "End"
@@ -105,6 +104,7 @@ instance Write xs k a => Write (k1 ::= a1 ': xs) k a where
 (=:) :: Write r k a => N k -> a -> Record r -> Record r
 (=:) = write
 
+<<<<<<< HEAD
 -- | Append type lists
 type family (++) (x :: [a]) (y :: [a]) :: [a]
 type instance '[]       ++ xs = xs
@@ -132,3 +132,23 @@ size z = reify z >>= getType >>= fmap lift go
         go (AppT q             i) = go q + go i
         go _                      = 0
 
+=======
+class Append xs ys where
+    -- | Create a new record by appending two, useful for inheritence / subtyping.
+    (&) :: Record xs -> Record ys -> Record (xs ++ ys)
+infixr 2 &
+
+instance Append '[] ys where
+    _ & ys = ys
+
+instance Append xs ys => Append (x ': xs) ys where
+    (x ::: xs) & ys = x ::: (xs & ys)
+
+-- | Use (:+) as 'cons' for the record fields.
+type x :+ xs = x ': xs
+infixr 4 :+
+
+type family (++) (x :: [a]) (y :: [a]) :: [a]
+type instance '[]       ++ xs = xs
+type instance (x ': xs) ++ ys = x ': (xs ++ ys)
+>>>>>>> 55ab3b751cb4cb5e78dd3fdf8016f7ac28910c9c
