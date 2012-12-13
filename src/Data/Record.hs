@@ -1,13 +1,27 @@
-{-# LANGUAGE GADTs, TypeFamilies, UndecidableInstances, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, ConstraintKinds, DataKinds, TypeOperators, PolyKinds, EmptyDataDecls, Rank2Types, ExistentialQuantification, FunctionalDependencies, KindSignatures, OverlappingInstances #-}
+{-# LANGUAGE GADTs, TypeFamilies, UndecidableInstances, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, ConstraintKinds, DataKinds, TypeOperators, PolyKinds, EmptyDataDecls, Rank2Types, ExistentialQuantification, FunctionalDependencies, KindSignatures, OverlappingInstances, TemplateHaskell #-}
 module Data.Record where
+import Language.Haskell.TH.Syntax
+import Language.Haskell.TH.Quote
+import Language.Haskell.TH.Lib
 import GHC.TypeLits
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
 -- you can't do field access from a string and a Typeable context, although
 -- it would certainly be very nice.
 data Key k
-key :: Key k
-key = undefined
+
+key :: String -> Q Exp
+key s = [| undefined :: Key $(litT . return . StrTyLit $ s) |] 
+
+set :: QuasiQuoter
+set = QuasiQuoter { quoteExp = \s -> [| write $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+
+alt :: QuasiQuoter
+alt = QuasiQuoter { quoteExp = \s -> [| alter  $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+
+get :: QuasiQuoter
+get = QuasiQuoter { quoteExp = \s -> [| access $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+
 -- | A field
 data F a b = F a b
 
@@ -17,12 +31,10 @@ infixr 4 &
 
 data P
 data family Record (t :: a) (r :: [F Symbol *])
-
 -- | "Pure" records
 data instance Record (w :: *) r where 
     Cp :: e -> Record P r -> Record P (k := e ': r)
     Ep :: Record P '[]
-
 -- | Record transformer
 data instance Record (w :: * -> *) r where 
     Ct :: w e -> Record w r -> Record w (k := e ': r)
@@ -118,13 +130,13 @@ instance Access P (k := a ': xs) k a where
     access _  (Cp x _) = x
 instance Access P xs k a => Access P (k0 := a0 ': xs) k a where
     {-# INLINE access #-}
-    access k (Cp _ xs) = access k xs
+    access n (Cp _ xs) = access n xs
 instance Access (w :: * -> *) (k := a ': xs) k (w a) where
     {-# INLINE access #-}
     access _  (Ct x _) = x
 instance Access (w :: * -> *) xs k (w a) => Access (w :: * -> *) (k0 := a0 ': xs) k (w a) where
     {-# INLINE access #-}
-    access k (Ct _ xs) = access k xs
+    access n (Ct _ xs) = access n xs
 
 class Update w r k a | r k -> a where
     -- | Write to a record's field
