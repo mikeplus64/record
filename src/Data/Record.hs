@@ -31,6 +31,9 @@ module Data.Record ( key
                    , alter
                    , append
                    , Record
+                   , compose
+                   , decompose
+                   , (:.)
                    , P
                    , (:=)
                    , type (++)
@@ -39,6 +42,8 @@ module Data.Record ( key
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
+import Control.Category ((.))
+import Prelude hiding ((.))
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
 -- you can't do field access from a string and a Typeable context, although
@@ -73,6 +78,12 @@ data P
 type family Wrap (w :: a) x
 type instance Wrap (w :: * -> *) x = w x
 type instance Wrap P x = x
+
+-- | Gross
+newtype (w :. m) x = Wmx { decompose :: w (m x) }
+
+compose ::  (a -> w (m x)) -> a -> (w :. m) x
+compose f x = Wmx (f x)
 
 data Record w r where 
     C :: Wrap w e -> Record w r -> Record w (k := e ': r)
