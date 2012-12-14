@@ -100,9 +100,11 @@ class Unbox r where
     unbox :: (forall a. w a -> a) -> Record (w :: * -> *) r -> Record P r 
 
 instance Unbox '[] where 
+    {-# INLINE unbox #-}
     unbox _ _ = end
 
 instance Unbox xs => Unbox (x ': xs) where
+    {-# INLINE unbox #-}
     unbox f (C x xs) = f x & unbox f xs
 
 class Box r where
@@ -111,9 +113,11 @@ class Box r where
     box :: (forall a. a -> w a) -> Record P r -> Record (w :: * -> *) r
 
 instance Box '[] where
+    {-# INLINE box #-}
     box _ _ = end
 
 instance Box xs => Box (x ': xs) where
+    {-# INLINE box #-}
     box f (C x xs) = C (f x) (box f xs)
 
 class Transform r where
@@ -148,9 +152,11 @@ class Runtrans r where
     runtrans :: Monad o => (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> Record i r -> o (Record P r)
 
 instance Runtrans '[] where
+    {-# INLINE runtrans #-}
     runtrans _ _ = return end
 
 instance Runtrans xs => Runtrans (x ': xs) where
+    {-# INLINE runtrans #-}
     runtrans f (C x xs) = do
         y  <- f x
         ys <- runtrans f xs
@@ -210,5 +216,4 @@ instance Append '[] a where
 instance Append xs ys => Append (x ': xs) ys where
     {-# INLINE append #-}
     append (C x xs) ys = C x (append xs ys)
-
 
