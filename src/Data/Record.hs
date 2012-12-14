@@ -1,3 +1,20 @@
+{-# LANGUAGE GADTs
+           , TypeFamilies
+           , FlexibleInstances
+           , FlexibleContexts
+           , DataKinds
+           , TypeOperators
+           , PolyKinds
+           , EmptyDataDecls
+           , Rank2Types
+           , ExistentialQuantification
+           , FunctionalDependencies
+           , KindSignatures
+           , OverlappingInstances
+           , UndecidableInstances
+           , TemplateHaskell
+           , ExplicitNamespaces #-}
+
 module Data.Record ( key
                    , set
                    , alt
@@ -12,15 +29,15 @@ module Data.Record ( key
                    , access
                    , write
                    , alter
-                   , append
+                --   , append
                    , Record
                    , P
                    , (:=)
-                   , NotElem
-                   , AllNotElem
+               --    , NotElem
+                 --  , AllNotElem
                    , type (++)
                    , Keys ) where
-
+module Data.Record where
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
@@ -57,42 +74,27 @@ type (:=) = 'F
 infixr 4 &
 
 data P
-data family Record (t :: a) (r :: [F Symbol *])
--- | "Pure" records
-data instance Record (w :: *) r where 
-    Cp :: e -> Record P r -> Record P (k := e ': r)
-    Ep :: Record P '[]
--- | Record transformer
-data instance Record (w :: * -> *) r where 
-    Ct :: w e -> Record w r -> Record w (k := e ': r)
-    Et :: Record (w :: * -> *) '[]
 
-instance Show (Record P '[]) where
-    show _ = "end"
-instance (Show a, Show (Record P xs)) => Show (Record P (k := a ': xs)) where
-    show (Cp x xs) = show x ++ " & " ++ show xs
+type family Wrap (w :: a) x
+type instance Wrap (w :: * -> *) x = w x
+type instance Wrap P             x = x
+
+data Record w r where 
+    C :: Wrap w e -> Record w r -> Record w (k := e ': r)
+    E :: Record w '[]
 
 instance Show (Record w '[]) where
     show _ = "end"
+instance (Show a, Show (Record P xs)) => Show (Record P (k := a ': xs)) where
+    show (C x xs) = show x ++ " & " ++ show xs
 instance (Show (w a), Show (Record w xs)) => Show (Record w (k := a ': xs)) where
-    show (Ct x xs) = show x ++ " & " ++ show xs
+    show (C x xs) = show x ++ " & " ++ show xs
 
-class BuildRecord w where
-    type Val w e
-    (&) :: Val w e -> Record w r -> Record w (k := e ': r)
-    end :: Record w '[]
-instance BuildRecord P where
-    type Val P e = e
-    {-# INLINE (&) #-}
-    {-# INLINE end #-}
-    (&) = Cp
-    end = Ep
-instance BuildRecord (w :: * -> *) where
-    type Val w e = w e
-    {-# INLINE (&) #-}
-    {-# INLINE end #-}
-    (&) = Ct
-    end = Et
+(&) :: Wrap w e -> Record w r -> Record w (k := e ': r)
+(&) = C
+
+end :: Record w '[]
+end = E
 
 class Unbox r where 
     -- | "Unbox" every element of a record.
@@ -103,7 +105,7 @@ instance Unbox '[] where
     unbox _ _ = end
 instance Unbox xs => Unbox (x ': xs) where
     {-# INLINE unbox #-}
-    unbox f (Ct x xs) = f x & unbox f xs
+    unbox f (C x xs) = f x & unbox f xs
 
 class Box r where
     -- | "Box" every element of a record.
@@ -112,7 +114,7 @@ class Box r where
 instance Box '[] where
     box _ _ = end
 instance Box xs => Box (x ': xs) where
-    box f (Cp x xs) = Ct (f x) (box f xs)
+    box f (C x xs) = C (f x) (box f xs)
 
 class Transform r where
     -- | Change the type wrapping every element of a record
@@ -120,7 +122,7 @@ class Transform r where
 instance Transform '[] where
     transform _ _ = end
 instance Transform xs => Transform (x ': xs) where
-    transform f (Ct x xs) = f x & transform f xs
+    transform f (C x xs) = f x & transform f xs
 
 class Run r where
     -- | Iterate over a Record's elements, and use a monad to unbox them
@@ -130,7 +132,7 @@ class Run r where
 instance Run '[] where
     run _ = return end
 instance Run xs => Run (x ': xs) where
-    run (Ct x xs) = do
+    run (C x xs) = do
         y  <- x
         ys <- run xs
         return (y & ys)
@@ -143,52 +145,61 @@ class Runtrans r where
 instance Runtrans '[] where
     runtrans _ _ = return end
 instance Runtrans xs => Runtrans (x ': xs) where
-    runtrans f (Ct x xs) = do
+    runtrans f (C x xs) = do
         y  <- f x
         ys <- runtrans f xs
         return (y & ys)
-{-# RULES "Record/runtrans" forall (f :: forall a. i a -> o a) (r :: Runtrans r => Record i r). run (transform f r)   = runtrans f r #-}
 
-class Access w r k a | w r k -> a where
-    -- | Get a field of a record given its label.
-    access :: Key k -> Record w r -> a
-instance Access P (k := a ': xs) k a where
-    {-# INLINE access #-}
-    access _  (Cp x _) = x
-instance Access P xs k a => Access P (k0 := a0 ': xs) k a where
-    {-# INLINE access #-}
-    access n (Cp _ xs) = access n xs
-instance Access (w :: * -> *) (k := a ': xs) k (w a) where
-    {-# INLINE access #-}
-    access _  (Ct x _) = x
-instance Access (w :: * -> *) xs k (w a) => Access (w :: * -> *) (k0 := a0 ': xs) k (w a) where
-    {-# INLINE access #-}
-    access n (Ct _ xs) = access n xs
+{-# RULES "Record/runtrans" 
+          forall (f :: forall a. i a -> o a) (r :: Runtrans r => Record i r). 
+          run (transform f r) = runtrans f r #-}
 
-class Update w r k a | r k -> a where
+class Access r k a | r k -> a where
+    access :: Key k -> Record w r -> Wrap w a
+instance Access (k := a ': xs) k a where
+    {-# INLINE access #-}
+    access _ (C x _) = x
+instance Access xs k a => Access (k0 := a0 ': xs) k a where
+    {-# INLINE access #-}
+    access n (C _ xs) = access n xs
+
+class Update r k a | r k -> a where
     -- | Write to a record's field
-    write :: Key k -> a        -> Record w r -> Record w r
+    write :: Key k -> Wrap w a  -> Record w r -> Record w r
     -- | Update a record's field
-    alter :: Key k -> (a -> a) -> Record w r -> Record w r
-instance Update P (k := a ': xs) k a where
+    alter :: Key k -> (Wrap w a -> Wrap w a)  -> Record w r -> Record w r
+instance Update (k := a ': xs) k a where
     {-# INLINE write #-}
     {-# INLINE alter #-}
-    write _ x (Cp _ xs) = x   & xs
-    alter _ f (Cp y ys) = f y & ys
-instance Update P xs k a => Update P (k0 := a0 ': xs) k a where
+    write _ x (C _ xs) = x   & xs
+    alter _ f (C y ys) = f y & ys
+instance Update xs k a => Update (k0 := a0 ': xs) k a where
     {-# INLINE write #-}
     {-# INLINE alter #-}
-    write n y (Cp x xs) = x & write n y xs
-    alter n f (Cp x xs) = x & alter n f xs
+    write n y (C x xs) = x & write n y xs
+    alter n f (C x xs) = x & alter n f xs
 
-class NotElem (x :: a) (xs :: [a])
-instance NotElem y '[ x ]
-instance NotElem y xs => NotElem y (x ': xs)
+{-
+class Change w r k where
+    type New w r k a
+    writep :: Key k -> a -> Record w r -> Record w (New w r k a)
 
-class AllNotElem (xs :: [a]) (ys :: [a])
+
+class Is a b (t :: Bool)
+instance Is a a 'True
+instance Is a b 'False
+
+class NotElem a as
+instance (NotElem a bs, Is a b 'False) => NotElem a (b ': bs)
+instance NotElem a '[]
+
+class AllNotElem xs ys
 instance AllNotElem '[] ys
-instance AllNotElem xs '[]
-instance (NotElem y xs, AllNotElem ys xs) => AllNotElem (y ': ys) xs
+instance (NotElem x ys, AllNotElem xs ys) => AllNotElem (x ': xs) ys
+
+type family Not (a :: Bool) :: Bool
+type instance Not 'True  = 'False
+type instance Not 'False = 'True
 
 type family Keys (xs :: [F k a]) :: [k]
 type instance Keys '[] = '[]
@@ -205,7 +216,7 @@ class Append w r0 r1 where
 instance Append w '[] ys where
     append _ ys = ys
 instance (AllNotElem (Keys xs) (Keys ys), Append P xs ys) => Append P (x ': xs) ys where
-    append (Cp x xs) ys = Cp x (append xs ys)
+    append (C x xs) ys = C x (append xs ys)
 instance (AllNotElem (Keys xs) (Keys ys), Append (w :: * -> *) xs ys) => Append w (x ': xs) ys where
-    append (Ct x xs) ys = Ct x (append xs ys)
-
+    append (C x xs) ys = C x (append xs ys)
+-}
