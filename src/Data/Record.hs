@@ -16,7 +16,7 @@
            , ScopedTypeVariables
            , ExplicitNamespaces #-}
 
-module Data.RecordT ( key
+module Data.Record ( key
                    , set
                    , alt
                    , get
