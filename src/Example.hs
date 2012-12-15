@@ -9,14 +9,26 @@ type Point
     , "z"       := Double 
     , "colour"  := (Int, Int, Int) ]
 
-op :: Record P Point
+op :: Record Point
 op = 0 & 0 & 0 & (0,0,0) & end
 
 main :: IO ()
 main = do
     point <- runcomp newIORef op
-    print =<< readIORef ([get|x|] point)
-    print =<< readIORef ([get|y|] point)
-    print =<< readIORef ([get|z|] point)
-    print =<< readIORef ([get|colour|] point)
+ -- point :: RecordT IORef Point
+        
+    let pointx = [get|x|] point
+        pointy = [get|x|] point
+        pointz = [get|z|] point
+        pointc = [get|colour|] point
+
+    writeIORef pointx 0
+    writeIORef pointy 1
+    writeIORef pointz 2
+    writeIORef pointc (255, 255, 0)
+
+    -- "freeze" the record
+    frozenPoint <- runtrans readIORef point
+ -- frozenPoint :: Record Point
+    print frozenPoint
 
