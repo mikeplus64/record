@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeOperators, DataKinds, QuasiQuotes #-}
 import Data.Record
 import Data.IORef
+import GHC.TypeLits
 
 type Point 
  = '[ "x"       := Double
@@ -11,12 +12,11 @@ type Point
 op :: Record P Point
 op = 0 & 0 & 0 & (0,0,0) & end
 
-p :: Record (IO :. IORef) Point
-p = box (compose newIORef) op
-
 main :: IO ()
 main = do
-    
-    print "yes"
-
+    point <- runcomp newIORef op
+    print =<< readIORef ([get|x|] point)
+    print =<< readIORef ([get|y|] point)
+    print =<< readIORef ([get|z|] point)
+    print =<< readIORef ([get|colour|] point)
 
