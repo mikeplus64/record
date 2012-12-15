@@ -43,7 +43,6 @@ import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 import Control.Monad
-import qualified Control.Category as C
 import Data.Monoid
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
@@ -62,19 +61,45 @@ data RecordT w r where
     E :: RecordT w '[]
 type Record = RecordT Pure
 
+{-# INLINE (&) #-}
+{-# INLINE end #-}
 (&) :: Wrap w e -> RecordT w r -> RecordT w (k := e ': r)
 (&) = C
 infixr 4 &
 end :: RecordT w '[]
 end = E
 
+instance Eq (RecordT w '[]) where
+    {-# INLINE (==) #-}
+    _ == _ = True
+
+instance ( Eq (Wrap w x)
+         , Eq (RecordT w xs)) 
+         => Eq (RecordT w (k := x ': xs)) where
+    {-# INLINE (==) #-}
+    C x xs == C y ys = x == y && xs == ys
+
+instance Ord (RecordT w '[]) where
+    {-# INLINE compare #-}
+    compare _ _ = EQ
+
+instance ( Ord (Wrap w x)
+         , Ord (RecordT w xs))
+         => Ord (RecordT w (k := x ': xs)) where
+    {-# INLINE compare #-}
+    compare (C x xs) (C y ys) = compare (compare x y) (compare xs ys)
+
 instance Show (RecordT w '[]) where
     show _ = "end"
 
-instance (Show a, Show (Record xs)) => Show (Record (k := a ': xs)) where
+instance ( Show a
+         , Show (Record xs)) 
+         => Show (Record (k := a ': xs)) where
     show (C x xs) = show x ++ " & " ++ show xs
 
-instance (Show (w a), Show (RecordT w xs)) => Show (RecordT w (k := a ': xs)) where
+instance ( Show (w a)
+         , Show (RecordT w xs)) 
+         => Show (RecordT w (k := a ': xs)) where
     show (C x xs) = show x ++ " & " ++ show xs
 
 instance Monoid (RecordT w '[]) where
@@ -83,9 +108,9 @@ instance Monoid (RecordT w '[]) where
     mappend _ _  = end 
     mempty       = end
 
-instance (Monoid (Wrap w x)
-        , Monoid (RecordT w xs)) 
-        => Monoid (RecordT w (k := x ': xs)) where
+instance ( Monoid (Wrap w x)
+         , Monoid (RecordT w xs)) 
+         => Monoid (RecordT w (k := x ': xs)) where
     {-# INLINE mappend #-}
     mappend (C x xs) (C y ys) = mappend x y & mappend xs ys
     mempty = undefined -- impossible to reach anyway
