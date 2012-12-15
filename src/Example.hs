@@ -11,9 +11,12 @@ type Point
 op :: Record P Point
 op = 0 & 0 & 0 & (0,0,0) & end
 
+p :: Record (IO :. IORef) Point
+p = box (compose newIORef) op
+
 main :: IO ()
 main = do
-    let p = box (compose newIORef) op
+    
     print "yes"
 
 

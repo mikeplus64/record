@@ -13,6 +13,7 @@
            , OverlappingInstances
            , UndecidableInstances
            , TemplateHaskell
+           , ScopedTypeVariables
            , ExplicitNamespaces #-}
 
 module Data.Record ( key
@@ -31,9 +32,7 @@ module Data.Record ( key
                    , alter
                    , append
                    , Record
-                   , compose
-                   , decompose
-                   , (:.)
+                   , runcomp
                    , P
                    , (:=)
                    , type (++)
@@ -43,6 +42,7 @@ import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 import Control.Category ((.))
+import Control.Monad
 import Prelude hiding ((.))
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
@@ -78,12 +78,6 @@ data P
 type family Wrap (w :: a) x
 type instance Wrap (w :: * -> *) x = w x
 type instance Wrap P x = x
-
--- | Gross
-newtype (w :. m) x = Wmx { decompose :: w (m x) }
-
-compose ::  (a -> w (m x)) -> a -> (w :. m) x
-compose f x = Wmx (f x)
 
 data Record w r where 
     C :: Wrap w e -> Record w r -> Record w (k := e ': r)
@@ -136,9 +130,11 @@ class Transform r where
     transform :: (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> Record i r -> Record o r
 
 instance Transform '[] where
+    {-# INLINE transform #-}
     transform _ _ = end
 
 instance Transform xs => Transform (x ': xs) where
+    {-# INLINE transform #-}
     transform f (C x xs) = f x & transform f xs
 
 class Run r where
@@ -150,11 +146,8 @@ class Run r where
 instance Run '[] where
     run _ = return end
 
-instance Run xs => Run (x ': xs) where
-    run (C x xs) = do
-        y  <- x
-        ys <- run xs
-        return (y & ys)
+instance (Run xs) => Run (x ': xs) where 
+    run (C x xs) = liftM2 C x (run xs)
 
 class Runtrans r where
     -- | A more efficient implementation of @ run . transform f @.
@@ -168,14 +161,7 @@ instance Runtrans '[] where
 
 instance Runtrans xs => Runtrans (x ': xs) where
     {-# INLINE runtrans #-}
-    runtrans f (C x xs) = do
-        y  <- f x
-        ys <- runtrans f xs
-        return (y & ys)
-
-{-# RULES "Record/runtrans" 
-          forall (f :: forall a. i a -> o a) (r :: Runtrans r => Record i r). 
-          run (transform f r) = runtrans f r #-}
+    runtrans f (C x xs) = liftM2 C (f x) (runtrans f xs)
 
 class Access r k a | r k -> a where
     access :: Key k -> Record w r -> Wrap w a
@@ -227,4 +213,15 @@ instance Append '[] a where
 instance Append xs ys => Append (x ': xs) ys where
     {-# INLINE append #-}
     append (C x xs) ys = C x (append xs ys)
+
+class RunComp r where
+    runcomp :: (Functor m, Monad m) => (forall a. a -> m (w a)) -> Record P r -> m (Record w r)
+
+instance RunComp '[] where
+    {-# INLINE runcomp #-}
+    runcomp _ _ = return end
+
+instance RunComp xs => RunComp (x ': xs) where
+    {-# INLINE runcomp #-}
+    runcomp f (C x xs) = liftM2 C (f x) (runcomp f xs)
 
