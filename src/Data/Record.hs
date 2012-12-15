@@ -43,44 +43,52 @@ import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 import Control.Monad
+import qualified Control.Category as C
+import Data.Monoid
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
 -- you can't do field access from a string and a Typeable context, although
 -- it would certainly be very nice.
 data Key k
-
--- tuples are ugly
 data F a b = F a b
-
 type (:=) = 'F
 
 data Pure
-
-newtype Flip f a b = Flip (f b a)
-
 type family Wrap (w :: a) x
 type instance Wrap (w :: * -> *) x = w x
 type instance Wrap Pure x = x
-
-type Record = RecordT Pure
-
 data RecordT w r where 
     C :: Wrap w e -> RecordT w r -> RecordT w (k := e ': r)
     E :: RecordT w '[]
-
-instance Show (RecordT w '[]) where
-    show _ = "end"
-instance (Show a, Show (Record xs)) => Show (Record (k := a ': xs)) where
-    show (C x xs) = show x ++ " & " ++ show xs
-instance (Show (w a), Show (RecordT w xs)) => Show (RecordT w (k := a ': xs)) where
-    show (C x xs) = show x ++ " & " ++ show xs
+type Record = RecordT Pure
 
 (&) :: Wrap w e -> RecordT w r -> RecordT w (k := e ': r)
 (&) = C
 infixr 4 &
-
 end :: RecordT w '[]
 end = E
+
+instance Show (RecordT w '[]) where
+    show _ = "end"
+
+instance (Show a, Show (Record xs)) => Show (Record (k := a ': xs)) where
+    show (C x xs) = show x ++ " & " ++ show xs
+
+instance (Show (w a), Show (RecordT w xs)) => Show (RecordT w (k := a ': xs)) where
+    show (C x xs) = show x ++ " & " ++ show xs
+
+instance Monoid (RecordT w '[]) where
+    {-# INLINE mappend #-}
+    {-# INLINE mempty  #-}
+    mappend _ _  = end 
+    mempty       = end
+
+instance (Monoid (Wrap w x)
+        , Monoid (RecordT w xs)) 
+        => Monoid (RecordT w (k := x ': xs)) where
+    {-# INLINE mappend #-}
+    mappend (C x xs) (C y ys) = mappend x y & mappend xs ys
+    mempty = undefined -- impossible to reach anyway
 
 class Unbox r where 
     -- | "Unbox" every element of a record.
@@ -161,7 +169,7 @@ class Update r k a | r k -> a where
     -- | Write to a record's field
     write :: Key k -> Wrap w a  -> RecordT w r -> RecordT w r
     -- | Update a record's field
-    alter :: Key k -> (Wrap w a -> Wrap w a)  -> RecordT w r -> RecordT w r
+    alter :: Key k -> (Wrap w a -> Wrap w a) -> RecordT w r -> RecordT w r
 
 instance Update (k := a ': xs) k a where
     {-# INLINE write #-}
@@ -225,5 +233,3 @@ alt = QuasiQuoter { quoteExp = \s -> [| alter  $(key s) |], quoteType = undefine
 -- > [get|x|] == access (undefined :: Key x)
 get :: QuasiQuoter
 get = QuasiQuoter { quoteExp = \s -> [| access $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
-
-

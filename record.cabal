@@ -1,5 +1,5 @@
 name:                record
-version:             1.0.2
+version:             1.0.3
 synopsis:            Efficient, type safe records implemented using GADTs and type level strings.
 homepage:            http://quasimal.com/projects/records
 license:             BSD3
