@@ -32,6 +32,7 @@ module Data.Record ( key
                    , alter
                    , append
                    , RecordT
+                   , Record
                    , runcomp
                    , Pure
                    , (:=)
