@@ -1,7 +1,8 @@
 {-# LANGUAGE TypeOperators, DataKinds, QuasiQuotes #-}
 import Data.Record
 import Data.IORef
-import GHC.TypeLits
+import Data.Monoid
+import GHC.TypeLits -- I get a GHC panic without this module
 
 type Point 
  = '[ "x"       := Double
@@ -41,18 +42,27 @@ main = do
     print frozenPoint
     -- 0.0 & 1.0 & 2.0 & (255,255,0) & end
     
-    let greg :: Record User
+    let greg, tony :: Record User
         greg = "GREG" & "Sir Greg of Gerg" & "Male" & "Gregland" & end
+        tony = "Scarface" & "Tony Montana" & "Male" & "Cuba" & end
 
         makeSpy :: Record User -> RecordT Maybe User
         makeSpy = [set|real name|] Nothing . box Just
 
     print greg
     -- "GREG" & "Sir Greg of Gerg" & "Male" & "Gregland" & end
-   
+    print tony
+    -- "Scarface" & "Tony Montana" & "Male" & "Cuba" & end
     print (makeSpy greg)
     -- Just "GREG" & Nothing & Just "Male" & Just "Gregland" & end
-    
+    print (makeSpy tony)
+    -- Just "Scarface" & Nothing & Just "Male" & Just "Cuba" & end
     print (run (makeSpy greg))
+    -- Nothing 
+    print (run (makeSpy tony))
+    -- Nothing
+    print (greg <> tony)
+    -- "GREGScarface" & "Sir Greg of GergTony Montana" & "MaleMale" & "GreglandCuba" & end
+    print (run (makeSpy greg) <> run (makeSpy tony))
     -- Nothing
 
