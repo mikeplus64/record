@@ -10,34 +10,15 @@
            , ExistentialQuantification
            , FunctionalDependencies
            , KindSignatures
+           , ImplicitParams
            , OverlappingInstances
            , UndecidableInstances
            , TemplateHaskell
            , ScopedTypeVariables
+           , GeneralizedNewtypeDeriving
            , ExplicitNamespaces #-}
 
-module Data.Record ( key
-                   , set
-                   , alt
-                   , get
-                   , (&)
-                   , end
-                   , unbox
-                   , box
-                   , transform
-                   , run
-                   , runtrans
-                   , access
-                   , write
-                   , alter
-                   , append
-                   , RecordT
-                   , Record
-                   , runcomp
-                   , Pure
-                   , (:=)
-                   , type (++)
-                   , Key ) where
+module Data.Record where
 
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
@@ -52,6 +33,12 @@ data Key k
 data F a b = F a b
 type (:=) = 'F
 
+-- | Type composition
+-- Used for cases where a record transformer has 
+newtype (w :.: m) (x :: *) = Wmx { wmx :: w (m x) }
+  deriving (Show, Eq, Ord, Enum)
+infixr 9 :.:
+
 data Pure
 type family Wrap (w :: a) x
 type instance Wrap (w :: * -> *) x = w x
@@ -62,12 +49,15 @@ data RecordT w r where
 type Record = RecordT Pure
 
 {-# INLINE (&) #-}
-{-# INLINE end #-}
 (&) :: Wrap w e -> RecordT w r -> RecordT w (k := e ': r)
 (&) = C
 infixr 4 &
+
 end :: RecordT w '[]
 end = E
+
+--------------------------------------------------------------------------------
+--  Standard instances
 
 instance Eq (RecordT w '[]) where
     {-# INLINE (==) #-}
@@ -75,7 +65,7 @@ instance Eq (RecordT w '[]) where
 
 instance ( Eq (Wrap w x)
          , Eq (RecordT w xs)) 
-         => Eq (RecordT w (k := x ': xs)) where
+        => Eq (RecordT w (k := x ': xs)) where
     {-# INLINE (==) #-}
     C x xs == C y ys = x == y && xs == ys
 
@@ -85,7 +75,7 @@ instance Ord (RecordT w '[]) where
 
 instance ( Ord (Wrap w x)
          , Ord (RecordT w xs))
-         => Ord (RecordT w (k := x ': xs)) where
+        => Ord (RecordT w (k := x ': xs)) where
     {-# INLINE compare #-}
     compare (C x xs) (C y ys) = compare (compare x y) (compare xs ys)
 
@@ -94,12 +84,12 @@ instance Show (RecordT w '[]) where
 
 instance ( Show a
          , Show (Record xs)) 
-         => Show (Record (k := a ': xs)) where
+        => Show (Record (k := a ': xs)) where
     show (C x xs) = show x ++ " & " ++ show xs
 
 instance ( Show (w a)
          , Show (RecordT w xs)) 
-         => Show (RecordT w (k := a ': xs)) where
+        => Show (RecordT w (k := a ': xs)) where
     show (C x xs) = show x ++ " & " ++ show xs
 
 instance Monoid (RecordT w '[]) where
@@ -110,74 +100,13 @@ instance Monoid (RecordT w '[]) where
 
 instance ( Monoid (Wrap w x)
          , Monoid (RecordT w xs)) 
-         => Monoid (RecordT w (k := x ': xs)) where
+        => Monoid (RecordT w (k := x ': xs)) where
     {-# INLINE mappend #-}
     mappend (C x xs) (C y ys) = mappend x y & mappend xs ys
     mempty = undefined -- impossible to reach anyway
 
-class Unbox r where 
-    -- | "Unbox" every element of a record.
-    -- Great for cases where every element is wrapped by a newtype.
-    unbox :: (forall a. w a -> a) -> RecordT (w :: * -> *) r -> Record r 
-
-instance Unbox '[] where 
-    {-# INLINE unbox #-}
-    unbox _ _ = end
-
-instance Unbox xs => Unbox (x ': xs) where
-    {-# INLINE unbox #-}
-    unbox f (C x xs) = f x & unbox f xs
-
-class Box r where
-    -- | "Box" every element of a record.
-    -- Usually means applying a newtype wrapper to everything
-    box :: (forall a. a -> w a) -> Record r -> RecordT (w :: * -> *) r
-
-instance Box '[] where
-    {-# INLINE box #-}
-    box _ _ = end
-
-instance Box xs => Box (x ': xs) where
-    {-# INLINE box #-}
-    box f (C x xs) = C (f x) (box f xs)
-
-class Transform r where
-    -- | Change the type wrapping every element of a record
-    transform :: (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> RecordT i r -> RecordT o r
-
-instance Transform '[] where
-    {-# INLINE transform #-}
-    transform _ _ = end
-
-instance Transform xs => Transform (x ': xs) where
-    {-# INLINE transform #-}
-    transform f (C x xs) = f x & transform f xs
-
-class Run r where
-    -- | Iterate over a RecordT's elements, and use a monad to unbox them
-    -- Especially handy in situations like transforming a @RecordT IORef a@ to 
-    -- @IO (Record a)@, where you can simply use run . transform readIORef
-    run :: Monad m => RecordT m r -> m (Record r)
-
-instance Run '[] where
-    run _ = return end
-
-instance (Run xs) => Run (x ': xs) where 
-    run (C x xs) = liftM2 C x (run xs)
-
-class Runtrans r where
-    -- | A more efficient implementation of @ run . transform f @.
-    -- Rewrite rules should transform @ run . transform f @ into a call
-    -- to @ runtrans f @
-    runtrans :: Monad o => (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> RecordT i r -> o (Record r)
-
-instance Runtrans '[] where
-    {-# INLINE runtrans #-}
-    runtrans _ _ = return end
-
-instance Runtrans xs => Runtrans (x ': xs) where
-    {-# INLINE runtrans #-}
-    runtrans f (C x xs) = liftM2 C (f x) (runtrans f xs)
+--------------------------------------------------------------------------------
+--  Field accessors/setters
 
 class Access r k a | r k -> a where
     access :: Key k -> RecordT w r -> Wrap w a
@@ -189,6 +118,25 @@ instance Access (k := a ': xs) k a where
 instance Access xs k a => Access (k0 := a0 ': xs) k a where
     {-# INLINE access #-}
     access n (C _ xs) = access n xs
+
+-- | Class to indicate whether a record "has" a key, and its type.
+class Has r k a | r k -> a
+instance Has k (k  := a  ': xs) (Just a)
+instance Has k xs m => Has k (k0 := a0 ': xs) m
+
+class Knock k r a | k r -> a where
+    -- | Try ("knock politely") to get a field of a record.
+    -- It's impossible to get proper "lookups" at runtime, so this function
+    -- is probably not very useful.
+    knock :: Key k -> RecordT w r -> Maybe (Wrap w a)
+
+instance Has k r Nothing => Knock k r () where
+    {-# INLINE knock #-}
+    knock _ _ = Nothing
+
+instance Access r k a => Knock k r a where
+    {-# INLINE knock #-}
+    knock k xs = Just (access k xs)
 
 class Update r k a | r k -> a where
     -- | Write to a record's field
@@ -207,6 +155,71 @@ instance Update xs k a => Update (k0 := a0 ': xs) k a where
     {-# INLINE alter #-}
     write n y (C x xs) = x & write n y xs
     alter n f (C x xs) = x & alter n f xs
+
+--------------------------------------------------------------------------------
+--  Record combinators
+
+class Box w m r wm | w m -> wm where
+    -- | "Box" every element of a record.
+    -- Usually means applying a newtype wrapper to everything
+    box :: (forall a. Wrap m a -> w (Wrap m a)) -> RecordT m r -> RecordT wm r
+
+instance Box w Pure '[] w where
+    {-# INLINE box #-}
+    box _ _ = end
+
+instance Box w Pure xs w => Box w Pure (x ': xs) w where
+    {-# INLINE box #-}
+    box f (C x xs) = C (f x) (box f xs)
+
+-- Compositions of the record wrapper types
+instance Box w m '[] (w :.: m) where
+    {-# INLINE box #-}
+    box _ _ = end
+
+instance Box (w :: * -> *) (m :: * -> *) xs (w :.: m) => Box w m (x ': xs) (w :.: m) where
+    {-# INLINE box #-}
+    box f (C x xs) = C (Wmx (f x)) (box f xs)
+
+
+class Transform r where
+    -- | Change the type wrapping every element of a record
+    transform :: (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> RecordT i r -> RecordT o r
+
+instance Transform '[] where
+    {-# INLINE transform #-}
+    transform _ _ = end
+
+instance Transform xs => Transform (x ': xs) where
+    {-# INLINE transform #-}
+    transform f (C x xs) = f x & transform f xs
+
+class Run r where
+    -- | Iterate over a RecordT's elements, and use the inner monad to iterate
+    -- over everything, and return a "pure" record.
+    run :: Monad m => RecordT m r -> m (Record r)
+
+instance Run '[] where
+    run _ = return end
+
+instance Run xs => Run (x ': xs) where
+    run (C x xs) = liftM2 C x (run xs)
+
+class Runtrans r where
+    -- | Iterate over every element of a record. Logically similar to @ run . transform f @, but
+    -- 'runtrans' should be more efficient.
+    runtrans :: Monad o => (forall a. (i :: * -> *) a -> (o :: * -> *) a) -> RecordT i r -> o (Record r)
+
+instance Runtrans '[] where
+    {-# INLINE runtrans #-}
+    runtrans _ _ = return end
+
+instance Runtrans xs => Runtrans (x ': xs) where
+    {-# INLINE runtrans #-}
+    runtrans f (C x xs) = liftM2 C (f x) (runtrans f xs)
+
+--------------------------------------------------------------------------------
+--  Subtyping
 
 -- | Append two type-level lists
 type family (++) (x :: [a]) (y :: [a]) :: [a]
@@ -230,18 +243,21 @@ instance Append xs ys => Append (x ': xs) ys where
     {-# INLINE append #-}
     append (C x xs) ys = C x (append xs ys)
 
-class RunComp r where
-    runcomp :: (Functor m, Monad m) => (forall a. a -> m (w a)) -> Record r -> m (RecordT w r)
+class Transrun r where
+    transrun :: Monad m => (forall a. a -> m (w a)) -> Record r -> m (RecordT w r)
 
-instance RunComp '[] where
-    {-# INLINE runcomp #-}
-    runcomp _ _ = return end
+instance Transrun '[] where
+    {-# INLINE transrun #-}
+    transrun _ _ = return end
 
-instance RunComp xs => RunComp (x ': xs) where
-    {-# INLINE runcomp #-}
-    runcomp f (C x xs) = liftM2 C (f x) (runcomp f xs)
+instance Transrun xs => Transrun (x ': xs) where
+    {-# INLINE transrun #-}
+    transrun f (C x xs) = liftM2 C (f x) (transrun f xs)
 
-key  ::  String -> Q Exp
+--------------------------------------------------------------------------------
+--  Convenience QuasiQuoters
+
+key :: String -> Q Exp
 key s = [| undefined :: Key $(litT . return . StrTyLit $ s) |] 
 
 -- | See 'write'
@@ -258,3 +274,4 @@ alt = QuasiQuoter { quoteExp = \s -> [| alter  $(key s) |], quoteType = undefine
 -- > [get|x|] == access (undefined :: Key x)
 get :: QuasiQuoter
 get = QuasiQuoter { quoteExp = \s -> [| access $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+
