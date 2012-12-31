@@ -1,16 +1,26 @@
+--------------------------------------------------------------------------------
+-- | 
+-- Module      : Data.Record
+-- Note        : Record "transformer" library providing some OOP features.
+-- 
+-- Data.Record provides a "record transformer" -- implemented as a heterogenous 
+-- linked list similar to HList. Data.Record records should have no more 
+-- overhead than actual linked lists, as accessors/keys only exist at the type 
+-- level, which also helps to ensure safety. This module provides some
+-- convenience 'QuasiQuoter's for syntactically easier record updates/accesses.
+-- 
+--------------------------------------------------------------------------------
+
 {-# LANGUAGE GADTs
            , TypeFamilies
            , FlexibleInstances
-           , FlexibleContexts
            , DataKinds
            , TypeOperators
            , PolyKinds
            , EmptyDataDecls
-           , Rank2Types
-           , ExistentialQuantification
+           , RankNTypes
            , FunctionalDependencies
            , KindSignatures
-           , ImplicitParams
            , OverlappingInstances
            , UndecidableInstances
            , TemplateHaskell
@@ -103,7 +113,7 @@ instance ( Monoid (Wrap w x)
         => Monoid (RecordT w (k := x ': xs)) where
     {-# INLINE mappend #-}
     mappend (C x xs) (C y ys) = mappend x y & mappend xs ys
-    mempty = undefined -- impossible to reach anyway
+    mempty                    = mempty      & mempty
 
 --------------------------------------------------------------------------------
 --  Field accessors/setters
@@ -227,21 +237,31 @@ type instance '[]       ++ '[]  = '[]
 type instance '[]       ++  ys  = ys
 type instance (x ': xs) ++  ys  = x ': (xs ++ ys)
 
-class Append r0 r1 where
+class Merge (r0 :: [F key *]) (r1 :: [F key *])
+instance (IsElem r1 k False, Merge r0 r1) => Merge (k := a ': r0) r1
+instance Merge '[] r1
+instance Merge r0 '[]
+
+class IsElem r k a | r k -> a
+instance IsElem '[]              k False
+instance IsElem (k  := a  ': xs) k True
+instance IsElem xs k m => IsElem (k0 := a0 ': xs) k m
+
+class Union r0 r1 where
     -- | Make a record by appending 2.
-    append :: RecordT w r0 -> RecordT w r1 -> RecordT w (r0 ++ r1)
+    union :: Merge r0 r1 => RecordT w r0 -> RecordT w r1 -> RecordT w (r0 ++ r1)
 
-instance Append '[] '[] where
-    {-# INLINE append #-}
-    append _ _ = end
+instance Union '[] '[] where
+    {-# INLINE union #-}
+    union _ _ = end
 
-instance Append '[] a where
-    {-# INLINE append #-}
-    append _ x = x
+instance Union '[] a where
+    {-# INLINE union #-}
+    union _ x = x
 
-instance Append xs ys => Append (x ': xs) ys where
-    {-# INLINE append #-}
-    append (C x xs) ys = C x (append xs ys)
+instance (Merge xs ys, Union xs ys) => Union (x ': xs) ys where
+    {-# INLINE union #-}
+    union (C x xs) ys = C x (union xs ys)
 
 class Transrun r where
     transrun :: Monad m => (forall a. a -> m (w a)) -> Record r -> m (RecordT w r)
