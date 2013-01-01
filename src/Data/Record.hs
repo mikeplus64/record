@@ -307,7 +307,7 @@ instance Transrun xs => Transrun (x ': xs) where
     transrun f (C x xs) = liftM2 C (f x) (transrun f xs)
 
 --------------------------------------------------------------------------------
---  Subtyping
+--  Unions
 
 -- | Append two type-level lists
 type family (++) (x :: [a]) (y :: [a]) :: [a]
