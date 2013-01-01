@@ -1,7 +1,10 @@
 --------------------------------------------------------------------------------
 -- | 
 -- Module      : Data.Record
--- Note        : Record "transformer" library providing some OOP features.
+-- Copyright   : 2012-2013 Mike Ledger
+-- License     : BSD3
+-- Maintainer  : eleventynine@gmail.com
+-- Stability   : experimental
 -- 
 -- Data.Record provides a "record transformer" -- implemented as a heterogenous 
 -- linked list similar to HList. Data.Record records should have no more 
@@ -9,6 +12,10 @@
 -- level, which also helps to ensure safety. This module provides some
 -- convenience 'QuasiQuoter's for syntactically easier record updates/accesses.
 -- 
+-- TODO:
+--  * Try and make 'Typeable' and 'Data' instances.
+--  * Fix unions to actually make unions of the records instead of
+--    not working (at compile time) when records have duplicate keys
 --------------------------------------------------------------------------------
 
 {-# LANGUAGE GADTs
@@ -28,13 +35,57 @@
            , GeneralizedNewtypeDeriving
            , ExplicitNamespaces #-}
 
-module Data.Record where
+module Data.Record 
+  ( Record
+  , RecordT
+
+  -- * Construction
+  , (&)
+  , nil
+
+  , Wrap
+  , Key
+  , (:=)
+
+  -- * Field accessing
+  , Access(..)
+  , Has
+  , Knock(..)
+
+  -- * Field updates
+  , Update(..)
+  
+  -- * Transformations
+  , Box(..)
+  , Transform(..)
+  , Run(..)
+  , Runtrans(..)
+  , Transrun(..)
+  
+  -- * Unions
+  , type (++)
+  , Union(..)
+  , AllUnique
+  , IsElem
+
+  -- * Records with "deeper" transformations
+  , type (:.:)
+  , compose
+
+  -- * Convenience
+  , Symbol
+  , key
+  , set
+  , get
+  , alt
+  ) where
 
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 import Control.Monad
 import Data.Monoid
+import GHC.TypeLits
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
 -- you can't do field access from a string and a Typeable context, although
@@ -45,17 +96,31 @@ type (:=) = 'F
 
 -- | Type composition
 -- Used for cases where a record transformer has 
-newtype (w :.: m) (x :: *) = Wmx { wmx :: w (m x) }
+newtype (w :.: m) (x :: *) = Wmx (w (m x))
   deriving (Show, Eq, Ord, Enum)
+
 infixr 9 :.:
 
+compose :: (a -> w (m a)) -> a -> (w :.: m) a
+compose f = Wmx . f
+
+-- | Phantom type denoting a simple record without any transformations
 data Pure
+
+-- | 'Wrap' lets you not put a record's fields in some wrapper when you
+-- don't want it (e.g. 'Identity'). In general I find this is nicer to use.
 type family Wrap (w :: a) x
 type instance Wrap (w :: * -> *) x = w x
-type instance Wrap Pure x = x
+type instance Wrap Pure          x = x
+
+-- | The base record transformer data type. Fields are indexed by type-level
+-- keys, which can be anything. It is very convenient to use
+-- 'GHC.TypeLits.Symbol' to index record fields, but it is just as valid to
+-- declare phantom types for them.
 data RecordT w r where 
     C :: Wrap w e -> RecordT w r -> RecordT w (k := e ': r)
     E :: RecordT w '[]
+
 type Record = RecordT Pure
 
 {-# INLINE (&) #-}
@@ -63,8 +128,8 @@ type Record = RecordT Pure
 (&) = C
 infixr 4 &
 
-end :: RecordT w '[]
-end = E
+nil :: RecordT w '[]
+nil = E
 
 --------------------------------------------------------------------------------
 --  Standard instances
@@ -90,7 +155,7 @@ instance ( Ord (Wrap w x)
     compare (C x xs) (C y ys) = compare (compare x y) (compare xs ys)
 
 instance Show (RecordT w '[]) where
-    show _ = "end"
+    show _ = "nil"
 
 instance ( Show a
          , Show (Record xs)) 
@@ -105,8 +170,8 @@ instance ( Show (w a)
 instance Monoid (RecordT w '[]) where
     {-# INLINE mappend #-}
     {-# INLINE mempty  #-}
-    mappend _ _  = end 
-    mempty       = end
+    mappend _ _  = nil
+    mempty       = nil
 
 instance ( Monoid (Wrap w x)
          , Monoid (RecordT w xs)) 
@@ -176,7 +241,7 @@ class Box w m r wm | w m -> wm where
 
 instance Box w Pure '[] w where
     {-# INLINE box #-}
-    box _ _ = end
+    box _ _ = nil
 
 instance Box w Pure xs w => Box w Pure (x ': xs) w where
     {-# INLINE box #-}
@@ -185,7 +250,7 @@ instance Box w Pure xs w => Box w Pure (x ': xs) w where
 -- Compositions of the record wrapper types
 instance Box w m '[] (w :.: m) where
     {-# INLINE box #-}
-    box _ _ = end
+    box _ _ = nil
 
 instance Box (w :: * -> *) (m :: * -> *) xs (w :.: m) => Box w m (x ': xs) (w :.: m) where
     {-# INLINE box #-}
@@ -198,7 +263,7 @@ class Transform r where
 
 instance Transform '[] where
     {-# INLINE transform #-}
-    transform _ _ = end
+    transform _ _ = nil
 
 instance Transform xs => Transform (x ': xs) where
     {-# INLINE transform #-}
@@ -210,9 +275,11 @@ class Run r where
     run :: Monad m => RecordT m r -> m (Record r)
 
 instance Run '[] where
-    run _ = return end
+    {-# INLINE run #-}
+    run _ = return nil
 
 instance Run xs => Run (x ': xs) where
+    {-# INLINE run #-}
     run (C x xs) = liftM2 C x (run xs)
 
 class Runtrans r where
@@ -222,11 +289,22 @@ class Runtrans r where
 
 instance Runtrans '[] where
     {-# INLINE runtrans #-}
-    runtrans _ _ = return end
+    runtrans _ _ = return nil
 
 instance Runtrans xs => Runtrans (x ': xs) where
     {-# INLINE runtrans #-}
     runtrans f (C x xs) = liftM2 C (f x) (runtrans f xs)
+
+class Transrun r where
+    transrun :: Monad m => (forall a. a -> m (w a)) -> Record r -> m (RecordT w r)
+
+instance Transrun '[] where
+    {-# INLINE transrun #-}
+    transrun _ _ = return nil
+
+instance Transrun xs => Transrun (x ': xs) where
+    {-# INLINE transrun #-}
+    transrun f (C x xs) = liftM2 C (f x) (transrun f xs)
 
 --------------------------------------------------------------------------------
 --  Subtyping
@@ -237,10 +315,10 @@ type instance '[]       ++ '[]  = '[]
 type instance '[]       ++  ys  = ys
 type instance (x ': xs) ++  ys  = x ': (xs ++ ys)
 
-class Merge (r0 :: [F key *]) (r1 :: [F key *])
-instance (IsElem r1 k False, Merge r0 r1) => Merge (k := a ': r0) r1
-instance Merge '[] r1
-instance Merge r0 '[]
+class AllUnique (r0 :: [F key *]) (r1 :: [F key *])
+instance (IsElem r1 k False, AllUnique r0 r1) => AllUnique (k := a ': r0) r1
+instance AllUnique '[] r1
+instance AllUnique r0 '[]
 
 class IsElem r k a | r k -> a
 instance IsElem '[]              k False
@@ -248,50 +326,44 @@ instance IsElem (k  := a  ': xs) k True
 instance IsElem xs k m => IsElem (k0 := a0 ': xs) k m
 
 class Union r0 r1 where
-    -- | Make a record by appending 2.
-    union :: Merge r0 r1 => RecordT w r0 -> RecordT w r1 -> RecordT w (r0 ++ r1)
+    -- | Merge a record. Unfortunately at the moment records that share fields
+    -- are simply not accepted. I'm not sure how to write a type family to
+    -- really make a "union".
+    union :: AllUnique r0 r1 => RecordT w r0 -> RecordT w r1 -> RecordT w (r0 ++ r1)
 
 instance Union '[] '[] where
     {-# INLINE union #-}
-    union _ _ = end
+    union _ _ = nil
 
 instance Union '[] a where
     {-# INLINE union #-}
     union _ x = x
 
-instance (Merge xs ys, Union xs ys) => Union (x ': xs) ys where
+instance (AllUnique xs ys, Union xs ys) => Union (x ': xs) ys where
     {-# INLINE union #-}
     union (C x xs) ys = C x (union xs ys)
-
-class Transrun r where
-    transrun :: Monad m => (forall a. a -> m (w a)) -> Record r -> m (RecordT w r)
-
-instance Transrun '[] where
-    {-# INLINE transrun #-}
-    transrun _ _ = return end
-
-instance Transrun xs => Transrun (x ': xs) where
-    {-# INLINE transrun #-}
-    transrun f (C x xs) = liftM2 C (f x) (transrun f xs)
 
 --------------------------------------------------------------------------------
 --  Convenience QuasiQuoters
 
-key :: String -> Q Exp
-key s = [| undefined :: Key $(litT . return . StrTyLit $ s) |] 
+keyQ :: String -> Q Exp
+keyQ s = [| undefined :: Key $(litT . return . StrTyLit $ s) |] 
+
+key :: QuasiQuoter
+key = QuasiQuoter { quoteExp = keyQ, quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
 -- | See 'write'
 -- [set|x|] == write (undefined :: Key x)
 set :: QuasiQuoter
-set = QuasiQuoter { quoteExp = \s -> [| write $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+set = QuasiQuoter { quoteExp = \s -> [| write $(keyQ s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
 -- | See 'alter'
 -- > [alt|x|] == alter (undefined :: Key x)
 alt :: QuasiQuoter
-alt = QuasiQuoter { quoteExp = \s -> [| alter  $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+alt = QuasiQuoter { quoteExp = \s -> [| alter  $(keyQ s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
 -- | See 'access'.
 -- > [get|x|] == access (undefined :: Key x)
 get :: QuasiQuoter
-get = QuasiQuoter { quoteExp = \s -> [| access $(key s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+get = QuasiQuoter { quoteExp = \s -> [| access $(keyQ s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
