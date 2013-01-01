@@ -89,7 +89,6 @@ import Language.Haskell.TH.Lib
 import Control.Monad
 import Data.Monoid
 import GHC.TypeLits
-import Unsafe.Coerce
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
 -- you can't do field access from a string and a Typeable context, although
@@ -131,7 +130,7 @@ type Record = RecordT Pure
 {-# INLINE (&) #-}
 (&) :: Wrap w e -> RecordT w r -> RecordT w (k := e ': r)
 (&) = C
-infixr 4 &
+infixr 5 &
 
 nil :: RecordT w '[]
 nil = E
