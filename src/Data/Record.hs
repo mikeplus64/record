@@ -95,7 +95,8 @@ data F a b = F a b
 type (:=) = 'F
 
 -- | Type composition
--- Used for cases where a record transformer has 
+-- Used for cases where a record transformer is "deeper" than normal, e.g. for
+-- functions like 'newIORef :: a -> IO (IORef a)'
 newtype (w :.: m) (x :: *) = Wmx (w (m x))
   deriving (Show, Eq, Ord, Enum)
 
