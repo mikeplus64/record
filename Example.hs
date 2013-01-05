@@ -26,9 +26,7 @@ main = do
     print $ access [key|y|] point2D
     print point3D
 
-    x <- readMaybe `fmap` getLine
-    y <- readMaybe `fmap` getLine
-    z <- readMaybe `fmap` getLine
+    [x,y,z] <- replicateM 3 (readMaybe <$> getLine)
 
     let pointy3D = x &. y &. z &. nil :: RecordT Maybe Coord3D
         pointm3D = transform (Just . runIdentity) point3D
