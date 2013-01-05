@@ -83,8 +83,8 @@ module Data.Record
   -- * Convenience
   , Symbol
   , key
-  , (=:)
-  , (~:)
+  , is
+  , alt
   , fields
   , fieldr
   ) where
@@ -386,11 +386,13 @@ key = QuasiQuoter { quoteExp = kq, quoteType = undefined, quoteDec = undefined, 
 --------------------------------------------------------------------------------
 --  Monad transformer convenience operators
 
-(=:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> w a -> m ()
-(=:) k a = modify (write k a)
+is :: (MonadState (RecordT w r) m, Update r k a) => Key k -> w a -> m ()
+is k a = modify (write k a)
+infixr 1 `is`
 
-(~:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> (w a -> w a) -> m ()
-(~:) k f = modify (alter k f)
+alt :: (MonadState (RecordT w r) m, Update r k a) => Key k -> (w a -> w a) -> m ()
+alt k f = modify (alter k f)
+infixr 1 `alt`
 
 fields :: (MonadState (RecordT w r) m, Access r k a) => Key k -> m (w a)
 fields = gets . access
