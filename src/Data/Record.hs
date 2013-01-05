@@ -85,7 +85,8 @@ module Data.Record
   , key
   , (=:)
   , (~:)
-  , (.:)
+  , fields
+  , fieldr
   ) where
 
 import Language.Haskell.TH.Syntax
@@ -391,6 +392,8 @@ key = QuasiQuoter { quoteExp = kq, quoteType = undefined, quoteDec = undefined, 
 (~:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> (w a -> w a) -> m ()
 (~:) k f = modify (alter k f)
 
-(.:) :: (MonadReader (RecordT w r) m, Access r k a) => Key k -> m (w a)
-(.:) k = asks (access k)
+fields :: (MonadState (RecordT w r) m, Access r k a) => Key k -> m (w a)
+fields = gets . access
 
+fieldr :: (MonadReader (RecordT w r) m, Access r k a) => Key k -> m (w a)
+fieldr = asks . access
