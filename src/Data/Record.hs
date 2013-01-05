@@ -44,9 +44,10 @@ module Data.Record
 
   -- * Construction
   , (&)
-  , (&-)
+  , (&.)
   , nil
   , Identity(..)
+  , EmptyRecord(..)
 
   , Key
   , (:=)
@@ -83,8 +84,8 @@ module Data.Record
   -- * Convenience
   , Symbol
   , key
-  , is
-  , alt
+  , (=:)
+  , (~:)
   , fields
   , fieldr
   ) where
@@ -93,6 +94,7 @@ import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 import Control.Monad
+import Control.Applicative
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
@@ -134,10 +136,10 @@ type Record = RecordT Identity
 (&) = C . Identity
 infixr 5 &
 
-{-# INLINE (&-) #-}
-(&-) :: w e -> RecordT w r -> RecordT w (k := e ': r)
-(&-) = C
-infixr 5 &-
+{-# INLINE (&.) #-}
+(&.) :: w e -> RecordT w r -> RecordT w (k := e ': r)
+(&.) = C
+infixr 5 &.
 
 nil :: RecordT w '[]
 nil = E
@@ -190,6 +192,15 @@ instance ( Monoid (w x)
     {-# INLINE mappend #-}
     mappend (C x xs) (C y ys) = mappend x y     `C` mappend xs ys
     mempty                    = (mempty :: w x) `C` mempty
+
+class EmptyRecord w r where
+    rempty :: RecordT w r
+
+instance EmptyRecord w '[] where
+    rempty = nil
+
+instance (Alternative f, EmptyRecord f xs) => EmptyRecord f (k := x ': xs) where
+    rempty = (empty :: f x) &. rempty
 
 --------------------------------------------------------------------------------
 --  Field accessors/setters
@@ -382,17 +393,14 @@ kq s = [| undefined :: Key $(litT . return . StrTyLit $ s) |]
 key :: QuasiQuoter
 key = QuasiQuoter { quoteExp = kq, quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
-
 --------------------------------------------------------------------------------
 --  Monad transformer convenience operators
 
-is :: (MonadState (RecordT w r) m, Update r k a) => Key k -> w a -> m ()
-is k a = modify (write k a)
-infixr 1 `is`
+(=:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> w a -> m ()
+(=:) k a = modify (write k a)
 
-alt :: (MonadState (RecordT w r) m, Update r k a) => Key k -> (w a -> w a) -> m ()
-alt k f = modify (alter k f)
-infixr 1 `alt`
+(~:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> (w a -> w a) -> m ()
+(~:) k f = modify (alter k f)
 
 fields :: (MonadState (RecordT w r) m, Access r k a) => Key k -> m (w a)
 fields = gets . access
