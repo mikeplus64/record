@@ -83,6 +83,9 @@ module Data.Record
   -- * Convenience
   , Symbol
   , key
+  , (=:)
+  , (~:)
+  , (.:)
   ) where
 
 import Language.Haskell.TH.Syntax
@@ -90,6 +93,7 @@ import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 import Control.Monad
 import Control.Monad.Identity
+import Control.Monad.Reader
 import Control.Monad.State
 import Data.Monoid
 import GHC.TypeLits
@@ -379,11 +383,14 @@ key = QuasiQuoter { quoteExp = kq, quoteType = undefined, quoteDec = undefined, 
 
 
 --------------------------------------------------------------------------------
---  State monad convenience operators
+--  Monad transformer convenience operators
 
 (=:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> w a -> m ()
 (=:) k a = modify (write k a)
 
 (~:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> (w a -> w a) -> m ()
 (~:) k f = modify (alter k f)
+
+(.:) :: (MonadReader (RecordT w r) m, Access r k a) => Key k -> m (w a)
+(.:) k = asks (access k)
 
