@@ -46,7 +46,6 @@ module Data.Record
   , (&)
   , nil
 
-  , Wrap
   , Key
   , (:=)
 
@@ -87,8 +86,11 @@ import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 import Control.Monad
+import Control.Monad.Identity
 import Data.Monoid
 import GHC.TypeLits
+
+instance Show a => Show (Identity a) where show = show . runIdentity
 
 -- | A key of a record. This does not exist at runtime, and as a tradeoff,
 -- you can't do field access from a string and a Typeable context, although
@@ -108,28 +110,27 @@ infixr 9 :.:
 compose :: (a -> w (m a)) -> a -> (w :.: m) a
 compose f = Wmx . f
 
--- | Phantom type denoting a simple record without any transformations
-data Pure
-
--- | 'Wrap' lets you not put a record's fields in some wrapper when you
--- don't want it (e.g. 'Identity'). In general I find this is nicer to use.
-type family Wrap (w :: a) x
-type instance Wrap (w :: * -> *) x = w x
-type instance Wrap Pure          x = x
-
 -- | The base record transformer data type. Fields are indexed by type-level
 -- keys, which can be anything. It is very convenient to use
 -- 'GHC.TypeLits.Symbol' to index record fields, but it is just as valid to
 -- declare phantom types for them.
 data RecordT w r where 
-    C :: Wrap w e -> RecordT w r -> RecordT w (k := e ': r)
+    C :: w e -> RecordT w r -> RecordT w (k := e ': r)
     E :: RecordT w '[]
 
-type Record = RecordT Pure
+type Record = RecordT Identity
 
-{-# INLINE (&) #-}
-(&) :: Wrap w e -> RecordT w r -> RecordT w (k := e ': r)
-(&) = C
+class Build e we w where
+    (&) :: we -> RecordT w xs -> RecordT w (k := e ': xs)
+
+instance Build e e Identity where
+    {-# INLINE (&) #-}
+    (&) x xs = C (Identity x) xs
+
+instance Build e (w e) w where
+    {-# INLINE (&) #-}
+    (&) = C
+
 infixr 5 &
 
 nil :: RecordT w '[]
@@ -142,7 +143,7 @@ instance Eq (RecordT w '[]) where
     {-# INLINE (==) #-}
     _ == _ = True
 
-instance ( Eq (Wrap w x)
+instance ( Eq (w x)
          , Eq (RecordT w xs)) 
         => Eq (RecordT w (k := x ': xs)) where
     {-# INLINE (==) #-}
@@ -152,7 +153,7 @@ instance Ord (RecordT w '[]) where
     {-# INLINE compare #-}
     compare _ _ = EQ
 
-instance ( Ord (Wrap w x)
+instance ( Ord (w x)
          , Ord (RecordT w xs))
         => Ord (RecordT w (k := x ': xs)) where
     {-# INLINE compare #-}
@@ -177,18 +178,18 @@ instance Monoid (RecordT w '[]) where
     mappend _ _  = nil
     mempty       = nil
 
-instance ( Monoid (Wrap w x)
+instance ( Monoid (w x)
          , Monoid (RecordT w xs)) 
         => Monoid (RecordT w (k := x ': xs)) where
     {-# INLINE mappend #-}
-    mappend (C x xs) (C y ys) = mappend x y & mappend xs ys
-    mempty                    = mempty      & mempty
+    mappend (C x xs) (C y ys) = mappend x y     & mappend xs ys
+    mempty                    = (mempty :: w x) & mempty
 
 --------------------------------------------------------------------------------
 --  Field accessors/setters
 
 class Access r k a | r k -> a where
-    access :: Key k -> RecordT w r -> Wrap w a
+    access :: Key k -> RecordT w r -> w a
 
 instance Access (k := a ': xs) k a where
     {-# INLINE access #-}
@@ -207,7 +208,7 @@ class Knock k r a | k r -> a where
     -- | Try ("knock politely") to get a field of a record.
     -- It's impossible to get proper "lookups" at runtime, so this function
     -- is probably not very useful.
-    knock :: Key k -> RecordT w r -> Maybe (Wrap w a)
+    knock :: Key k -> RecordT w r -> Maybe (w a)
 
 instance Has k r Nothing => Knock k r () where
     {-# INLINE knock #-}
@@ -219,9 +220,9 @@ instance Access r k a => Knock k r a where
 
 class Update r k a | r k -> a where
     -- | Write to a record's field
-    write :: Key k -> Wrap w a  -> RecordT w r -> RecordT w r
+    write :: Key k -> w a  -> RecordT w r -> RecordT w r
     -- | Update a record's field
-    alter :: Key k -> (Wrap w a -> Wrap w a) -> RecordT w r -> RecordT w r
+    alter :: Key k -> (w a -> w a) -> RecordT w r -> RecordT w r
 
 instance Update (k := a ': xs) k a where
     {-# INLINE write #-}
@@ -241,15 +242,7 @@ instance Update xs k a => Update (k0 := a0 ': xs) k a where
 class Box w m r wm | w m -> wm where
     -- | "Box" every element of a record.
     -- Usually means applying a newtype wrapper to everything
-    box :: (forall a. Wrap m a -> w (Wrap m a)) -> RecordT m r -> RecordT wm r
-
-instance Box w Pure '[] w where
-    {-# INLINE box #-}
-    box _ _ = nil
-
-instance Box w Pure xs w => Box w Pure (x ': xs) w where
-    {-# INLINE box #-}
-    box f (C x xs) = C (f x) (box f xs)
+    box :: (forall a. m a -> w (m a)) -> RecordT m r -> RecordT wm r
 
 -- Compositions of the record wrapper types
 instance Box w m '[] (w :.: m) where
@@ -284,7 +277,7 @@ instance Run '[] where
 
 instance Run xs => Run (x ': xs) where
     {-# INLINE run #-}
-    run (C x xs) = liftM2 C x (run xs)
+    run (C x xs) = liftM2 (&) x (run xs)
 
 class Runtrans r where
     -- | Iterate over every element of a record. Logically similar to @ run . transform f @, but
@@ -297,7 +290,7 @@ instance Runtrans '[] where
 
 instance Runtrans xs => Runtrans (x ': xs) where
     {-# INLINE runtrans #-}
-    runtrans f (C x xs) = liftM2 C (f x) (runtrans f xs)
+    runtrans f (C x xs) = liftM2 (&) (f x) (runtrans f xs)
 
 class Transrun r where
     transrun :: Monad m => (forall a. a -> m (w a)) -> Record r -> m (RecordT w r)
@@ -308,7 +301,7 @@ instance Transrun '[] where
 
 instance Transrun xs => Transrun (x ': xs) where
     {-# INLINE transrun #-}
-    transrun f (C x xs) = liftM2 C (f x) (transrun f xs)
+    transrun f (C x xs) = liftM2 (&) (f (runIdentity x)) (transrun f xs)
 
 --------------------------------------------------------------------------------
 --  Unions
@@ -348,7 +341,7 @@ instance (AllUnique xs ys, Union xs ys) => Union (x ': xs) ys where
     union (C x xs) ys = C x (union xs ys)
 
 class CombineWith r where
-    combineWith :: (forall (a :: *). Wrap w a -> Wrap w a -> Wrap w a) -> RecordT w r -> RecordT w r -> RecordT w r
+    combineWith :: (forall (a :: *). w a -> w a -> w a) -> RecordT w r -> RecordT w r -> RecordT w r
 
 instance CombineWith '[] where
     combineWith _ _ _ = nil
