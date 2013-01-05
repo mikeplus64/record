@@ -44,7 +44,9 @@ module Data.Record
 
   -- * Construction
   , (&)
+  , (&-)
   , nil
+  , Identity(..)
 
   , Key
   , (:=)
@@ -57,6 +59,9 @@ module Data.Record
   -- * Field updates
   , Update(..)
   
+  -- * Field deletion
+  , Delete(..)
+
   -- * Transformations
   , Box(..)
   , Transform(..)
@@ -67,6 +72,7 @@ module Data.Record
   -- * Unions
   , type (++)
   , Union(..)
+  , CombineWith(..)
   , AllUnique
   , IsElem
 
@@ -77,9 +83,6 @@ module Data.Record
   -- * Convenience
   , Symbol
   , key
-  , set
-  , get
-  , alt
   ) where
 
 import Language.Haskell.TH.Syntax
@@ -87,6 +90,7 @@ import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Lib
 import Control.Monad
 import Control.Monad.Identity
+import Control.Monad.State
 import Data.Monoid
 import GHC.TypeLits
 
@@ -120,18 +124,15 @@ data RecordT w r where
 
 type Record = RecordT Identity
 
-class Build e we w where
-    (&) :: we -> RecordT w xs -> RecordT w (k := e ': xs)
-
-instance Build e e Identity where
-    {-# INLINE (&) #-}
-    (&) x xs = C (Identity x) xs
-
-instance Build e (w e) w where
-    {-# INLINE (&) #-}
-    (&) = C
-
+{-# INLINE (&) #-}
+(&) :: e -> Record r -> Record (k := e ': r)
+(&) = C . Identity
 infixr 5 &
+
+{-# INLINE (&-) #-}
+(&-) :: w e -> RecordT w r -> RecordT w (k := e ': r)
+(&-) = C
+infixr 5 &-
 
 nil :: RecordT w '[]
 nil = E
@@ -182,8 +183,8 @@ instance ( Monoid (w x)
          , Monoid (RecordT w xs)) 
         => Monoid (RecordT w (k := x ': xs)) where
     {-# INLINE mappend #-}
-    mappend (C x xs) (C y ys) = mappend x y     & mappend xs ys
-    mempty                    = (mempty :: w x) & mempty
+    mappend (C x xs) (C y ys) = mappend x y     `C` mappend xs ys
+    mempty                    = (mempty :: w x) `C` mempty
 
 --------------------------------------------------------------------------------
 --  Field accessors/setters
@@ -227,29 +228,45 @@ class Update r k a | r k -> a where
 instance Update (k := a ': xs) k a where
     {-# INLINE write #-}
     {-# INLINE alter #-}
-    write _ x (C _ xs) = x   & xs
-    alter _ f (C y ys) = f y & ys
+    write _ x (C _ xs) = x   `C` xs
+    alter _ f (C y ys) = f y `C` ys
 
 instance Update xs k a => Update (k0 := a0 ': xs) k a where
     {-# INLINE write #-}
     {-# INLINE alter #-}
-    write n y (C x xs) = x & write n y xs
-    alter n f (C x xs) = x & alter n f xs
+    write n y (C x xs) = x `C` write n y xs
+    alter n f (C x xs) = x `C` alter n f xs
+
+
+--------------------------------------------------------------------------------
+--  Field deletion
+
+class Delete r0 r1 k | r0 k -> r1 where
+    delete :: Key k -> RecordT w r0 -> RecordT w r1
+
+instance Delete '[] '[] k where
+    delete _ _ = nil
+
+instance Delete (k := x ': xs) xs k where
+    delete _ (C _ xs) = xs
+
+instance Delete xs ys k => Delete (k0 := x ': xs) (k0 := x ': ys) k where
+    delete k (C x xs) = C x (delete k xs)
 
 --------------------------------------------------------------------------------
 --  Record combinators
 
-class Box w m r wm | w m -> wm where
+class Box w m r where
     -- | "Box" every element of a record.
     -- Usually means applying a newtype wrapper to everything
-    box :: (forall a. m a -> w (m a)) -> RecordT m r -> RecordT wm r
+    box :: (forall a. m a -> w (m a)) -> RecordT m r -> RecordT (w :.: m) r
 
 -- Compositions of the record wrapper types
-instance Box w m '[] (w :.: m) where
+instance Box w m '[] where
     {-# INLINE box #-}
     box _ _ = nil
 
-instance Box (w :: * -> *) (m :: * -> *) xs (w :.: m) => Box w m (x ': xs) (w :.: m) where
+instance Box (w :: * -> *) (m :: * -> *) xs => Box w m (x ': xs) where
     {-# INLINE box #-}
     box f (C x xs) = C (Wmx (f x)) (box f xs)
 
@@ -264,7 +281,7 @@ instance Transform '[] where
 
 instance Transform xs => Transform (x ': xs) where
     {-# INLINE transform #-}
-    transform f (C x xs) = f x & transform f xs
+    transform f (C x xs) = f x `C` transform f xs
 
 class Run r where
     -- | Iterate over a RecordT's elements, and use the inner monad to iterate
@@ -301,7 +318,7 @@ instance Transrun '[] where
 
 instance Transrun xs => Transrun (x ': xs) where
     {-# INLINE transrun #-}
-    transrun f (C x xs) = liftM2 (&) (f (runIdentity x)) (transrun f xs)
+    transrun f (C x xs) = liftM2 C (f (runIdentity x)) (transrun f xs)
 
 --------------------------------------------------------------------------------
 --  Unions
@@ -341,6 +358,8 @@ instance (AllUnique xs ys, Union xs ys) => Union (x ': xs) ys where
     union (C x xs) ys = C x (union xs ys)
 
 class CombineWith r where
+    -- | Take two records with identical fields, and "combine" them with some combining function.
+    -- e.g. @ combineWith (<|>) (r0 :: RecordT Maybe r) (r1 :: RecordT Maybe r) @
     combineWith :: (forall (a :: *). w a -> w a -> w a) -> RecordT w r -> RecordT w r -> RecordT w r
 
 instance CombineWith '[] where
@@ -352,24 +371,19 @@ instance CombineWith xs => CombineWith (x ': xs) where
 --------------------------------------------------------------------------------
 --  Convenience QuasiQuoters
 
-keyQ :: String -> Q Exp
-keyQ s = [| undefined :: Key $(litT . return . StrTyLit $ s) |] 
+kq :: String -> Q Exp
+kq s = [| undefined :: Key $(litT . return . StrTyLit $ s) |] 
 
 key :: QuasiQuoter
-key = QuasiQuoter { quoteExp = keyQ, quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+key = QuasiQuoter { quoteExp = kq, quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
--- | See 'write'
--- [set|x|] == write (undefined :: Key x)
-set :: QuasiQuoter
-set = QuasiQuoter { quoteExp = \s -> [| write $(keyQ s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
 
--- | See 'alter'
--- > [alt|x|] == alter (undefined :: Key x)
-alt :: QuasiQuoter
-alt = QuasiQuoter { quoteExp = \s -> [| alter  $(keyQ s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+--------------------------------------------------------------------------------
+--  State monad convenience operators
 
--- | See 'access'.
--- > [get|x|] == access (undefined :: Key x)
-get :: QuasiQuoter
-get = QuasiQuoter { quoteExp = \s -> [| access $(keyQ s) |], quoteType = undefined, quoteDec = undefined, quotePat = undefined }
+(=:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> w a -> m ()
+(=:) k a = modify (write k a)
+
+(~:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> (w a -> w a) -> m ()
+(~:) k f = modify (alter k f)
 
