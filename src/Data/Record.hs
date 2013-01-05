@@ -40,11 +40,13 @@
 
 module Data.Record 
   ( Record
-  , RecordT
+  , RecordT(..)
 
   -- * Construction
   , (&)
   , (&.)
+  , F(..)
+  , type F
   , nil
   , Identity(..)
   , EmptyRecord(..)
@@ -125,7 +127,7 @@ compose f = Wmx . f
 -- keys, which can be anything. It is very convenient to use
 -- 'GHC.TypeLits.Symbol' to index record fields, but it is just as valid to
 -- declare phantom types for them.
-data RecordT w r where 
+data RecordT :: (* -> *) -> [F k *] -> * where 
     C :: w e -> RecordT w r -> RecordT w (k := e ': r)
     E :: RecordT w '[]
 
