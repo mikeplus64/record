@@ -3,6 +3,8 @@ import Data.Record
 import Text.Read (readMaybe)
 import Control.Applicative
 import Control.Monad.State
+import Control.Arrow
+import Data.Monoid
 
 type Coord2D
     = '[ "x" := Double
@@ -28,8 +30,23 @@ main = do
     y <- readMaybe `fmap` getLine
     z <- readMaybe `fmap` getLine
 
-    let pointy3D = x &- y &- z &- nil :: RecordT Maybe Coord3D
+    let pointy3D = x &. y &. z &. nil :: RecordT Maybe Coord3D
         pointm3D = transform (Just . runIdentity) point3D
+
+    let mf :: StateT (RecordT Maybe Coord3D) IO ()
+        mf = do
+            xm <- fields [key|x|]
+            liftIO (print xm)
+            [key|x|] =: Just 100
+            [key|y|] ~: fmap (maybe 0 id xm +)
+            [key|z|] =: Just 32
+                
+    print =<< runStateT mf pointy3D
+
+    print . ($ (rempty :: RecordT Maybe Coord3D)) 
+          $ write [key|x|] (Just (sqrt 2))
+        >>> write [key|y|] (Just (sqrt 3))
+        >>> write [key|z|] (Just (sqrt 4))
 
     print (combineWith (<|>) pointy3D pointm3D)
 
