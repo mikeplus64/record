@@ -347,6 +347,15 @@ instance (AllUnique xs ys, Union xs ys) => Union (x ': xs) ys where
     {-# INLINE union #-}
     union (C x xs) ys = C x (union xs ys)
 
+class CombineWith r where
+    combineWith :: (forall (a :: *). Wrap w a -> Wrap w a -> Wrap w a) -> RecordT w r -> RecordT w r -> RecordT w r
+
+instance CombineWith '[] where
+    combineWith _ _ _ = nil
+
+instance CombineWith xs => CombineWith (x ': xs) where
+    combineWith f (C x xs) (C y ys) = C (f x y) (combineWith f xs ys)
+
 --------------------------------------------------------------------------------
 --  Convenience QuasiQuoters
 
