@@ -73,3 +73,9 @@ pull :: ZipcordT w xs               (k := y ': ys) k' a'
      -> ZipcordT w (k' := a' ': xs) ys             k  y
 pull (ZipcordT xs x (C y ys)) = ZipcordT (C x xs) y ys
 
+shift :: Int -> Q Exp
+shift 0 = [| id |]
+shift i = Prelude.foldr1 
+    (\l r -> [| (.) |] `appE` l `appE` r) 
+    (replicate (abs i) (if i > 0 then [| push |] else [| pull |]))
+
