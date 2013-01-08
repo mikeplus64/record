@@ -1,17 +1,11 @@
 {-# LANGUAGE OverloadedStrings
            , DeriveFunctor
-           , DeriveTraversable
-           , UndecidableInstances
-           , DeriveFoldable
            , DataKinds
            , PolyKinds
-           , TypeFamilies
            , TemplateHaskell
            , GADTs
-           , ScopedTypeVariables
            , FlexibleInstances
            , FlexibleContexts
-           , FunctionalDependencies
            , TypeOperators #-}
 
 module Data.Record.ZipcordT where
@@ -23,15 +17,12 @@ import Data.Foldable    as F
 import Data.Traversable as T
 import Control.Comonad
 import Control.Applicative
-import Control.Lens
 
 data ZipcordT w xs ys k a = ZipcordT
     { _zleft  :: RecordT w xs
     , _zfocus :: w a
     , _zright :: RecordT w ys
     } deriving (Eq, Ord, Show, Functor)
-
-makeLenses ''ZipcordT
 
 {-# INLINE pee #-}
 pee :: (Applicative f, Comonad w, Comonad m) => w (a -> b) -> m a -> f b
@@ -105,7 +96,6 @@ pull (ZipcordT xs x (C y ys)) = ZipcordT (C x xs) y ys
 -- > *n*  < 0 = *n* calls to 'pull'
 -- > *n*  > 0 = *n* calls to 'push'
 -- > *n* == 0 = id
---
 shift :: Int -> Q Exp
 shift 0 = [| id |]
 shift i = Prelude.foldr1 
