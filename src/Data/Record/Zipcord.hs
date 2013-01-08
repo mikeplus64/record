@@ -8,7 +8,7 @@
            , FlexibleContexts
            , TypeOperators #-}
 
-module Data.Record.ZipcordT where
+module Data.Record.Zipcord where
 import Data.Record
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Lib
