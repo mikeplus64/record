@@ -46,7 +46,6 @@ module Data.Record
   , (&)
   , (&.)
   , F(..)
-  , type F
   , nil
   , Identity(..)
   , EmptyRecord(..)
@@ -120,6 +119,7 @@ newtype (w :.: m) (x :: *) = Wmx (w (m x))
 
 infixr 9 :.:
 
+{-# INLINE compose #-}
 compose :: (a -> w (m a)) -> a -> (w :.: m) a
 compose f = Wmx . f
 
@@ -143,11 +143,12 @@ infixr 5 &
 (&.) = C
 infixr 5 &.
 
+{-# INLINE nil #-}
 nil :: RecordT w '[]
 nil = E
 
 --------------------------------------------------------------------------------
---  Standard instances
+--  Instances
 
 instance Eq (RecordT w '[]) where
     {-# INLINE (==) #-}
@@ -170,16 +171,19 @@ instance ( Ord (w x)
     compare (C x xs) (C y ys) = compare (compare x y) (compare xs ys)
 
 instance Show (RecordT w '[]) where
+    {-# INLINE show #-}
     show _ = "nil"
 
 instance ( Show a
          , Show (Record xs)) 
         => Show (Record (k := a ': xs)) where
+    {-# INLINE show #-}
     show (C x xs) = show x ++ " & " ++ show xs
 
 instance ( Show (w a)
          , Show (RecordT w xs)) 
         => Show (RecordT w (k := a ': xs)) where
+    {-# INLINE show #-}
     show (C x xs) = show x ++ " & " ++ show xs
 
 instance Monoid (RecordT w '[]) where
@@ -192,6 +196,7 @@ instance ( Monoid (w x)
          , Monoid (RecordT w xs)) 
         => Monoid (RecordT w (k := x ': xs)) where
     {-# INLINE mappend #-}
+    {-# INLINE mempty  #-}
     mappend (C x xs) (C y ys) = mappend x y     `C` mappend xs ys
     mempty                    = (mempty :: w x) `C` mempty
 
@@ -199,10 +204,12 @@ class EmptyRecord w r where
     rempty :: RecordT w r
 
 instance EmptyRecord w '[] where
+    {-# INLINE rempty #-}
     rempty = nil
 
 instance (Alternative f, EmptyRecord f xs) => EmptyRecord f (k := x ': xs) where
-    rempty = (empty :: f x) &. rempty
+    {-# INLINE rempty #-}
+    rempty = (empty :: f x) `C` rempty
 
 --------------------------------------------------------------------------------
 --  Field accessors/setters
@@ -263,12 +270,15 @@ class Delete r0 r1 k | r0 k -> r1 where
     delete :: Key k -> RecordT w r0 -> RecordT w r1
 
 instance Delete '[] '[] k where
+    {-# INLINE delete #-}
     delete _ _ = nil
 
 instance Delete (k := x ': xs) xs k where
+    {-# INLINE delete #-}
     delete _ (C _ xs) = xs
 
 instance Delete xs ys k => Delete (k0 := x ': xs) (k0 := x ': ys) k where
+    {-# INLINE delete #-}
     delete k (C x xs) = C x (delete k xs)
 
 --------------------------------------------------------------------------------
@@ -381,9 +391,11 @@ class CombineWith r where
     combineWith :: (forall (a :: *). w a -> w a -> w a) -> RecordT w r -> RecordT w r -> RecordT w r
 
 instance CombineWith '[] where
+    {-# INLINE combineWith #-}
     combineWith _ _ _ = nil
 
 instance CombineWith xs => CombineWith (x ': xs) where
+    {-# INLINE combineWith #-}
     combineWith f (C x xs) (C y ys) = C (f x y) (combineWith f xs ys)
 
 --------------------------------------------------------------------------------
@@ -398,14 +410,18 @@ key = QuasiQuoter { quoteExp = kq, quoteType = undefined, quoteDec = undefined, 
 --------------------------------------------------------------------------------
 --  Monad transformer convenience operators
 
+{-# INLINE (=:) #-}
 (=:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> w a -> m ()
 (=:) k a = modify (write k a)
 
+{-# INLINE (~:) #-}
 (~:) :: (MonadState (RecordT w r) m, Update r k a) => Key k -> (w a -> w a) -> m ()
 (~:) k f = modify (alter k f)
 
+{-# INLINE fields #-}
 fields :: (MonadState (RecordT w r) m, Access r k a) => Key k -> m (w a)
 fields = gets . access
 
+{-# INLINE fieldr #-}
 fieldr :: (MonadReader (RecordT w r) m, Access r k a) => Key k -> m (w a)
 fieldr = asks . access
